@@ -141,6 +141,13 @@ echo 结束时间: %date% %time%
 echo.
 
 if exist "%OUTPUT_DIR%" (
+    for /f "delims=" %%F in ('dir /b /a-d "%OUTPUT_DIR%\柳如烟*.exe" 2^>nul') do (
+        set "ORIG_NAME=%%F"
+        set "ENG_NAME=!ORIG_NAME:柳如烟=liuruyan!"
+        if not exist "%OUTPUT_DIR%\!ENG_NAME!" (
+            copy /y "%OUTPUT_DIR%\%%F" "%OUTPUT_DIR%\!ENG_NAME!" >nul 2>&1
+        )
+    )
     echo 安装包产物（.exe 独立安装包，支持当前用户/所有用户双模式）:
     for /f "delims=" %%F in ('dir /b /o:-d "%OUTPUT_DIR%\*.exe" 2^>nul') do (
         echo   %OUTPUT_DIR%\%%F
