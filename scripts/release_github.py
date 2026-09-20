@@ -191,10 +191,14 @@ def main():
         print(f"[ERROR] 检查 Release 失败 (HTTP {status}): {body.decode('utf-8')}")
         sys.exit(1)
 
+    # 目标上传文件名统一规范化为英文 (柳如烟 -> liuruyan)
+    target_asset_name = installer.name.replace("柳如烟", "liuruyan")
+    print(f"  发布文件名 : {target_asset_name}")
+
     # 2. 检查是否有同名文件，若有先清理以便覆盖更新
     print("\n[2/3] 正在检查文件是否已存在...")
     for asset in release_data.get("assets", []):
-        if asset.get("name") == installer.name:
+        if asset.get("name") in (target_asset_name, installer.name):
             print(f"  [info] 发现已存在同名资产 (Asset ID: {asset['id']})，正在覆盖清理...")
             del_status, _ = api_request(f"https://api.github.com/repos/{repo}/releases/assets/{asset['id']}", token, method="DELETE")
             if del_status == 204:
@@ -203,7 +207,7 @@ def main():
 
     # 3. 上传安装包文件
     upload_url_template = release_data.get("upload_url", "")
-    quoted_name = urllib.parse.quote(installer.name)
+    quoted_name = urllib.parse.quote(target_asset_name)
     upload_url = upload_url_template.split("{")[0] + f"?name={quoted_name}"
 
     print(f"\n[3/3] 正在上传安装包 ({file_size_mb:.2f} MB)，根据网络状况可能需要数十秒至几分钟...")
