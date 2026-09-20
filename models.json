@@ -2178,63 +2178,6 @@
       "api_key_url": "",
       "models": []
     },
-    "custom-5ho6ku4rcw": {
-      "id": "custom-5ho6ku4rcw",
-      "name": "浮梦",
-      "base_url": "https://fumeng.top/",
-      "api_key": "",
-      "api_key_prefix": "",
-      "transport": "openai_chat",
-      "require_api_key": false,
-      "freeze_url": false,
-      "enabled": true,
-      "is_aggregator": false,
-      "is_builtin": false,
-      "extra_headers": {},
-      "description": "",
-      "icon": "",
-      "homepage": "",
-      "api_key_url": "",
-      "models": [
-        {
-          "id": "gpt-5.5",
-          "name": "GPT-5.5",
-          "tags": [
-            "reasoning",
-            "vision",
-            "function_calling"
-          ],
-          "icon": "",
-          "added_by_user": true,
-          "pricing": null,
-          "context_length": null
-        },
-        {
-          "id": "gpt-5.4",
-          "name": "GPT-5.4",
-          "tags": [
-            "reasoning",
-            "vision",
-            "function_calling"
-          ],
-          "icon": "",
-          "added_by_user": true,
-          "pricing": null,
-          "context_length": null
-        },
-        {
-          "id": "gpt-image-2",
-          "name": "GPT Image 2",
-          "tags": [
-            "image_gen"
-          ],
-          "icon": "",
-          "added_by_user": true,
-          "pricing": null,
-          "context_length": null
-        }
-      ]
-    },
     "custom-31l2g2kk7v": {
       "id": "custom-31l2g2kk7v",
       "name": "8yes.cc",
@@ -2413,6 +2356,63 @@
             "reasoning",
             "vision",
             "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        }
+      ]
+    },
+    "custom-5ho6ku4rcw": {
+      "id": "custom-5ho6ku4rcw",
+      "name": "浮梦",
+      "base_url": "https://fumeng.top/",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "gpt-5.5",
+          "name": "GPT-5.5",
+          "tags": [
+            "reasoning",
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        },
+        {
+          "id": "gpt-5.4",
+          "name": "GPT-5.4",
+          "tags": [
+            "reasoning",
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        },
+        {
+          "id": "gpt-image-2",
+          "name": "GPT Image 2",
+          "tags": [
+            "image_gen"
           ],
           "icon": "",
           "added_by_user": true,
@@ -2717,21 +2717,6 @@
           "context_length": 262144
         },
         {
-          "id": "cohere/north-mini-code:free",
-          "name": "Cohere: North Mini Code (free)",
-          "tags": [
-            "free",
-            "function_calling"
-          ],
-          "icon": "",
-          "added_by_user": true,
-          "pricing": {
-            "prompt": "0",
-            "completion": "0"
-          },
-          "context_length": 256000
-        },
-        {
           "id": "moonshotai/kimi-k3",
           "name": "MoonshotAI: Kimi K3",
           "tags": [
@@ -2745,6 +2730,21 @@
             "input_cache_read": "0.0000003"
           },
           "context_length": 1048576
+        },
+        {
+          "id": "z-ai/glm-5.2:free",
+          "name": "Z.ai: GLM 5.2 (free)",
+          "tags": [
+            "free",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": {
+            "prompt": "0",
+            "completion": "0"
+          },
+          "context_length": 32768
         }
       ]
     },
@@ -2798,8 +2798,8 @@
       "api_key_url": "https://platform.deepseek.com/api_keys",
       "models": [
         {
-          "id": "deepseek-v4-pro",
-          "name": "deepseek-v4-pro",
+          "id": "deepseek-flash",
+          "name": "deepseek-flash",
           "tags": [
             "function_calling"
           ],
@@ -2809,15 +2809,15 @@
           "context_length": 128000
         },
         {
-          "id": "deepseek-v4-flash",
-          "name": "deepseek-v4-flash",
+          "id": "deepseek-v4-pro",
+          "name": "deepseek-v4-pro",
           "tags": [
             "function_calling"
           ],
           "icon": "",
           "added_by_user": true,
           "pricing": null,
-          "context_length": 128000
+          "context_length": 1000000
         }
       ]
     },
