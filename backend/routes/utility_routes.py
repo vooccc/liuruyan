@@ -330,3 +330,107 @@ async def translate(req: TranslateRequest) -> TranslateResponse:
         chars_in=len(raw),
         chars_out=len(translated),
     )
+
+
+class CheckUpdateResponse(BaseModel):
+    success: bool
+    latest_version: Optional[str] = None
+    release_name: Optional[str] = None
+    release_notes: Optional[str] = None
+    published_at: Optional[str] = None
+    download_url: Optional[str] = None
+    html_url: Optional[str] = None
+    is_private_or_404: bool = False
+    message: Optional[str] = None
+
+
+@router.get("/check_update", response_model=CheckUpdateResponse)
+async def check_github_update():
+    """检测 GitHub 官方 Releases 最新版本"""
+    import json
+    import socket
+    import urllib.request
+    import urllib.error
+
+    repo = "vooccc/liuruyan"
+    api_url = f"https://api.github.com/repos/{repo}/releases/latest"
+
+    # 自动探测挂接本地网络代理 (Clash / v2rayN)
+    proxy_url = None
+    for port in [7897, 7890, 10809, 1080]:
+        s = socket.socket()
+        s.settimeout(0.15)
+        try:
+            s.connect(("127.0.0.1", port))
+            proxy_url = f"http://127.0.0.1:{port}"
+            break
+        except Exception:
+            pass
+        finally:
+            s.close()
+
+    handlers = []
+    if proxy_url:
+        handlers.append(urllib.request.ProxyHandler({"http": proxy_url, "https": proxy_url}))
+
+    opener = urllib.request.build_opener(*handlers)
+    req = urllib.request.Request(
+        api_url,
+        headers={
+            "User-Agent": "Liuruyan-Desktop-App",
+            "Accept": "application/vnd.github.v3+json",
+        },
+    )
+
+    try:
+        loop = asyncio.get_running_loop()
+
+        def _fetch():
+            with opener.open(req, timeout=10) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+
+        data = await loop.run_in_executor(None, _fetch)
+
+        tag = data.get("tag_name", "").lstrip("v")
+        notes = data.get("body", "")
+        published_at = data.get("published_at", "")
+        html_url = data.get("html_url", f"https://github.com/{repo}/releases")
+
+        # 优先寻找 .exe 安装包直链
+        download_url = html_url
+        for asset in data.get("assets", []):
+            if asset.get("name", "").endswith(".exe"):
+                download_url = asset.get("browser_download_url", download_url)
+                break
+
+        return CheckUpdateResponse(
+            success=True,
+            latest_version=tag,
+            release_name=data.get("name") or f"v{tag}",
+            release_notes=notes,
+            published_at=published_at,
+            download_url=download_url,
+            html_url=html_url,
+            is_private_or_404=False,
+            message="检测成功",
+        )
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return CheckUpdateResponse(
+                success=False,
+                is_private_or_404=True,
+                message="未在 GitHub 检索到公开发布的 Release。若仓库为私有，请在 GitHub 仓库设置中设为 Public。",
+            )
+        return CheckUpdateResponse(
+            success=False,
+            is_private_or_404=False,
+            message=f"GitHub API 请求失败 (HTTP {e.code})",
+        )
+    except Exception as e:
+        logger.warning("check_update failed: %s", e)
+        return CheckUpdateResponse(
+            success=False,
+            is_private_or_404=False,
+            message=f"网络连接受限: {str(e)}",
+        )
+

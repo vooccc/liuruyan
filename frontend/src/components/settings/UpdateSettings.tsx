@@ -9,6 +9,7 @@ export default function UpdateSettings() {
     downloading,
     downloadProgress,
     error,
+    currentInstalledVersion,
     checkForUpdates,
     startUpdate,
     openManualDownload,
@@ -19,7 +20,7 @@ export default function UpdateSettings() {
       <div style={{ marginBottom: '24px' }}>
         <h2 style={{ fontSize: '18px', fontWeight: 600, margin: 0, marginBottom: '8px' }}>软件版本与更新</h2>
         <p style={{ color: 'var(--text-secondary, #888)', fontSize: '13px', margin: 0 }}>
-          柳如烟支持自动化安全更新，基于 Ed25519 数字签名防篡改。所有安装包均通过官方 GitHub Releases 分发。
+          柳如烟支持自动化版本检测与一键极速更新，所有正式安装包均通过官方 GitHub Releases 安全分发。
         </p>
       </div>
 
@@ -39,7 +40,7 @@ export default function UpdateSettings() {
         <div>
           <div style={{ fontSize: '12px', color: 'var(--text-secondary, #888)', marginBottom: '4px' }}>当前安装版本</div>
           <div style={{ fontSize: '20px', fontWeight: 700, fontFamily: 'monospace' }}>
-            {updateInfo?.currentVersion ? `v${updateInfo.currentVersion}` : 'v2.0.17'}
+            v{currentInstalledVersion}
           </div>
         </div>
 
@@ -206,12 +207,12 @@ export default function UpdateSettings() {
               }}
             >
               <Download size={15} />
-              <span>{downloading ? '正在安装…' : '立即安装并重启'}</span>
+              <span>{downloading ? '正在拉取下载…' : '一键下载最新安装包 (.exe)'}</span>
             </button>
 
             <button
               type="button"
-              onClick={openManualDownload}
+              onClick={() => window.open(updateInfo.htmlUrl || 'https://github.com/vooccc/liuruyan/releases', '_blank')}
               style={{
                 padding: '8px 14px',
                 borderRadius: '8px',
@@ -222,7 +223,7 @@ export default function UpdateSettings() {
                 fontSize: '13px',
               }}
             >
-              浏览器直接下载
+              查看 GitHub Release 说明
             </button>
           </div>
         </div>
