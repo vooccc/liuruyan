@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     读取 / 修改项目版本号（同步更新 tauri.conf.json、package.json 与 Cargo.toml）。
 
