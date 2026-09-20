@@ -207,19 +207,43 @@ def main():
     tag = f"v{version}"
     repo = "vooccc/liuruyan"
 
-    print(f"  目标仓库   : {repo}")
-    print(f"  发布版本号 : {tag}")
-
     installers = find_installers(root)
     if not installers:
         print("\n[ERROR] 未在本地找到已构建的安装包！")
         print("请先运行 '一键打包.bat' 生成安装包，然后再执行发布。")
         sys.exit(1)
 
-    print(f"  发现安装包 : {len(installers)} 个产物待发布:")
+    # 版本一致性校验与中英文名称映射
+    version_matched = []
+    version_mismatched = []
     for inst in installers:
-        mb = inst.stat().st_size / (1024 * 1024)
-        print(f"    • {inst.name} ({mb:.2f} MB)")
+        target_name = inst.name.replace("柳如烟", "liuruyan")
+        if version in inst.name:
+            version_matched.append((inst, target_name))
+        else:
+            version_mismatched.append((inst, target_name))
+
+    if version_matched:
+        target_installers = version_matched
+        print(f"  匹配版本 ({tag}) 的安装包 {len(target_installers)} 个:")
+        for inst, t_name in target_installers:
+            mb = inst.stat().st_size / (1024 * 1024)
+            print(f"    • 本地: {inst.name} -> 发布: {t_name} ({mb:.2f} MB)")
+    else:
+        target_installers = version_mismatched
+        print("\n" + "!" * 60)
+        print(f"  ⚠️  [版本不匹配警告]")
+        print(f"  当前项目代码版本为 : {tag}")
+        print(f"  但在本地仅检索到历史旧版本的安装包:")
+        for inst, t_name in target_installers:
+            mb = inst.stat().st_size / (1024 * 1024)
+            print(f"    • 本地文件: {inst.name} ({mb:.2f} MB)")
+        print("  说明：您尚未运行 '一键打包.bat' 编译当前代码，磁盘中仍是以前构建的旧文件。")
+        print("!" * 60 + "\n")
+        confirm = input(f"是否仍要强制上传这些旧版本安装包至 {tag} Release? (y/n, 默认 n): ").strip().lower()
+        if confirm not in ("y", "yes"):
+            print("\n[INFO] 已取消上传。请先运行 '一键打包.bat' 构建当前最新版本，然后再发布！")
+            sys.exit(0)
     print("------------------------------------------------------------")
 
     token = get_github_token(root)
@@ -262,14 +286,13 @@ def main():
         sys.exit(1)
 
     # 2. 循环上传所有产物
-    print(f"\n[2/2] 开始批量上传产物 ({len(installers)} 个)...")
+    print(f"\n[2/2] 开始批量上传产物 ({len(target_installers)} 个)...")
     upload_url_template = release_data.get("upload_url", "")
     successful_uploads = []
 
-    for idx, installer in enumerate(installers, 1):
-        target_asset_name = installer.name.replace("柳如烟", "liuruyan")
+    for idx, (installer, target_asset_name) in enumerate(target_installers, 1):
         file_size_mb = installer.stat().st_size / (1024 * 1024)
-        print(f"\n({idx}/{len(installers)}) 正在处理: {target_asset_name} ({file_size_mb:.2f} MB)")
+        print(f"\n({idx}/{len(target_installers)}) 正在处理: {target_asset_name} ({file_size_mb:.2f} MB)")
 
         # 检查是否已存在同名资产，有则清理覆盖
         for asset in release_data.get("assets", []):
