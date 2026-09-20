@@ -60,3 +60,5 @@ Thumbs.db
 .claude/
 .cursor/
 scratch/
+.github_token
+models.secrets.json

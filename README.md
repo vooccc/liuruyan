@@ -100,11 +100,20 @@ npm install
 npm run dev:tauri
 ```
 
-### 3. 一键打包发布 (Windows)
-```cmd
-一键打包.bat
-```
-打包脚本将自动构建精简版后端 sidecar 与 Tauri 安装包，产物将生成在安装包目录中。
+### 3. 客户端打包与自动化发版
+
+本项目提供**本地一键打包直推**与 **GitHub Actions 云端自动化发版**两种方式：
+
+- **方式一：本地一键打包与发布（推荐）**
+  - 双击运行 `一键打包.bat`，脚本将自动完成 Python sidecar 编译与 Tauri 安装包封装；
+  - 打包结束后会提示是否立即上传至 GitHub Releases，输入 `y` 即可全自动创建 Release 并上传安装包；或随时双击运行 `一键发布.bat` 上传最新生成的安装包。
+- **方式二：GitHub Actions 云端全自动发版（无需占用本地电脑性能）**
+  - 只要在本地给当前代码打上版本标签并推送至 GitHub：
+    ```bash
+    git tag v2.0.18
+    git push origin v2.0.18
+    ```
+  - GitHub Actions 将自动在云端 Windows 机器上拉取依赖、编译并打包，完成后自动在 Release 页面生成下载文件。
 
 ---
 

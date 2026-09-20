@@ -128,6 +128,13 @@ if exist "%OUTPUT_DIR%" (
 
 echo.
 echo （想改 minor/major 运行: scripts\bump_version.ps1 -Mode minor）
+echo.
+
+set /p AUTO_PUB="是否立即将最新安装包自动发布至 GitHub Releases? (y/n, 默认 n): "
+if /i "%AUTO_PUB%"=="y" (
+    echo.
+    call "一键发布.bat"
+)
 
 echo.
 pause
