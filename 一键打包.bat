@@ -104,7 +104,6 @@ if %BUILD_EXIT% neq 0 (
 
 rem --- 成功汇报 ---
 set "OUTPUT_DIR=%CARGO_TARGET_DIR%\release\bundle\nsis"
-if not exist "%OUTPUT_DIR%" set "OUTPUT_DIR=%CARGO_TARGET_DIR%\release\bundle\msi"
 if not exist "%OUTPUT_DIR%" set "OUTPUT_DIR=%CARGO_TARGET_DIR%\release\bundle"
 
 echo.
@@ -115,8 +114,8 @@ echo 结束时间: %date% %time%
 echo.
 
 if exist "%OUTPUT_DIR%" (
-    echo 安装包产物（支持当前用户 / 所有用户双模式）:
-    for /f "delims=" %%F in ('dir /b /o:-d "%OUTPUT_DIR%\*.exe" "%OUTPUT_DIR%\*.msi" 2^>nul') do (
+    echo 安装包产物（.exe 独立安装包，支持当前用户/所有用户双模式）:
+    for /f "delims=" %%F in ('dir /b /o:-d "%OUTPUT_DIR%\*.exe" 2^>nul') do (
         echo   %OUTPUT_DIR%\%%F
     )
     echo.

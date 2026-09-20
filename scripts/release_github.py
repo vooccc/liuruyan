@@ -119,20 +119,17 @@ def get_version(root: Path) -> str:
 def find_installers(root: Path) -> list[Path]:
     search_dirs = [
         root.parent / "lry-target" / "release" / "bundle" / "nsis",
-        root.parent / "lry-target" / "release" / "bundle" / "msi",
         root / "frontend" / "src-tauri" / "target" / "release" / "bundle" / "nsis",
-        root / "frontend" / "src-tauri" / "target" / "release" / "bundle" / "msi",
     ]
 
     seen = set()
     installers = []
     for s_dir in search_dirs:
         if s_dir.exists():
-            for ext in ("*.exe", "*.msi", "*.zip"):
-                for f in s_dir.glob(ext):
-                    if f.name not in seen:
-                        seen.add(f.name)
-                        installers.append(f)
+            for f in s_dir.glob("*.exe"):
+                if f.name not in seen:
+                    seen.add(f.name)
+                    installers.append(f)
 
     # 按修改时间倒序排列
     installers.sort(key=lambda p: p.stat().st_mtime, reverse=True)
@@ -262,7 +259,7 @@ def main():
             "tag_name": tag,
             "target_commitish": "main",
             "name": f"柳如烟 (Ruyan AI) {tag} 正式版",
-            "body": f"### 柳如烟 {tag} 发布说明\n\n- 自动化桌面客户端安装包发布\n- 支持 Windows 10 / 11 开箱即用 (.exe / .msi)",
+            "body": f"### 柳如烟 {tag} 发布说明\n\n- 自动化桌面客户端安装包发布\n- 支持 Windows 10 / 11 开箱即用 (.exe 安装程序)",
             "draft": False,
             "prerelease": False,
             "generate_release_notes": True

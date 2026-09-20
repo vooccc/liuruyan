@@ -30,7 +30,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "msi"],
+    "targets": ["nsis"],
     "publisher": "LiuRuYan",
     "shortDescription": "柳如烟智能体",
     "longDescription": "柳如烟 — 多智能体协作桌面工作台",

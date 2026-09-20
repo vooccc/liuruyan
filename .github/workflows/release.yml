@@ -85,7 +85,6 @@ jobs:
           name: "柳如烟 (Ruyan AI) ${{ steps.tag_info.outputs.tag }}"
           files: |
             frontend/src-tauri/target/release/bundle/nsis/*.exe
-            frontend/src-tauri/target/release/bundle/msi/*.msi
           draft: false
           prerelease: false
           generate_release_notes: true

@@ -15,7 +15,7 @@ $FrontendDir = Join-Path $ProjectRoot "frontend"
 $LogPath = Join-Path $ProjectRoot "package_build.log"
 $SidecarExe = Join-Path $ProjectRoot "frontend\src-tauri\binaries\liuruyan-backend-x86_64-pc-windows-msvc.exe"
 $TargetDir = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path (Split-Path $ProjectRoot -Parent) "lry-target" }
-$MsiDir = Join-Path $TargetDir "release\bundle\msi"
+$NsisDir = Join-Path $TargetDir "release\bundle\nsis"
 
 if ($PackageScript.Trim().Length -gt 0) {
     $PackageCommand = "npm run $PackageScript"
@@ -70,8 +70,8 @@ function Get-StatusLines {
     $sidecarReady = $null -ne $sidecar -and $sidecar.Length -gt 10000000
 
     $bundleDir = Join-Path $TargetDir "release\bundle"
-    $installer = Get-ChildItem -Path $bundleDir -Recurse -File -Include *.exe, *.msi -ErrorAction SilentlyContinue |
-        Where-Object { $_.FullName -match 'bundle\\(nsis|msi)\\' } |
+    $installer = Get-ChildItem -Path $bundleDir -Recurse -File -Include *.exe -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -match 'bundle\\nsis\\' } |
         Sort-Object LastWriteTime -Descending | Select-Object -First 1
     $installerText = if ($installer -and $installer.LastWriteTime -gt $startTime) { $installer.Name } else { "-" }
 
