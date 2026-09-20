@@ -116,7 +116,7 @@ def get_version(root: Path) -> str:
     return "2.0.18"
 
 
-def find_installer(root: Path) -> Path | None:
+def find_installers(root: Path) -> list[Path]:
     search_dirs = [
         root.parent / "lry-target" / "release" / "bundle" / "nsis",
         root.parent / "lry-target" / "release" / "bundle" / "msi",
@@ -124,19 +124,19 @@ def find_installer(root: Path) -> Path | None:
         root / "frontend" / "src-tauri" / "target" / "release" / "bundle" / "msi",
     ]
 
-    candidates = []
+    seen = set()
+    installers = []
     for s_dir in search_dirs:
         if s_dir.exists():
-            for ext in ("*.exe", "*.msi"):
+            for ext in ("*.exe", "*.msi", "*.zip"):
                 for f in s_dir.glob(ext):
-                    candidates.append(f)
+                    if f.name not in seen:
+                        seen.add(f.name)
+                        installers.append(f)
 
-    if not candidates:
-        return None
-
-    # 按修改时间倒序排列，取最新的安装包
-    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-    return candidates[0]
+    # 按修改时间倒序排列
+    installers.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    return installers
 
 
 def get_github_token(root: Path) -> str:
@@ -210,21 +210,22 @@ def main():
     print(f"  目标仓库   : {repo}")
     print(f"  发布版本号 : {tag}")
 
-    installer = find_installer(root)
-    if not installer or not installer.exists():
+    installers = find_installers(root)
+    if not installers:
         print("\n[ERROR] 未在本地找到已构建的安装包！")
         print("请先运行 '一键打包.bat' 生成安装包，然后再执行发布。")
         sys.exit(1)
 
-    file_size_mb = installer.stat().st_size / (1024 * 1024)
-    print(f"  待上传产物 : {installer.name} ({file_size_mb:.2f} MB)")
-    print(f"  本地路径   : {installer}")
+    print(f"  发现安装包 : {len(installers)} 个产物待发布:")
+    for inst in installers:
+        mb = inst.stat().st_size / (1024 * 1024)
+        print(f"    • {inst.name} ({mb:.2f} MB)")
     print("------------------------------------------------------------")
 
     token = get_github_token(root)
 
     # 1. 检查或创建 Release
-    print(f"\n[1/3] 正在检查/创建 GitHub Release ({tag})...")
+    print(f"\n[1/2] 正在检查/创建 GitHub Release ({tag})...")
     status, body = api_request(f"https://api.github.com/repos/{repo}/releases/tags/{tag}", token)
 
     release_data = None
@@ -237,7 +238,7 @@ def main():
             "tag_name": tag,
             "target_commitish": "main",
             "name": f"柳如烟 (Ruyan AI) {tag} 正式版",
-            "body": f"### 柳如烟 {tag} 发布说明\n\n- 自动化桌面客户端安装包发布\n- 支持 Windows 10 / 11 开箱即用",
+            "body": f"### 柳如烟 {tag} 发布说明\n\n- 自动化桌面客户端安装包发布\n- 支持 Windows 10 / 11 开箱即用 (.exe / .msi)",
             "draft": False,
             "prerelease": False,
             "generate_release_notes": True
@@ -260,58 +261,61 @@ def main():
         print(f"[ERROR] 检查 Release 失败 (HTTP {status}): {body.decode('utf-8', errors='ignore')}")
         sys.exit(1)
 
-    # 目标上传文件名统一规范化为英文 (柳如烟 -> liuruyan)
-    target_asset_name = installer.name.replace("柳如烟", "liuruyan")
-    print(f"  发布文件名 : {target_asset_name}")
-
-    # 2. 检查是否有同名文件，若有先清理以便覆盖更新
-    print("\n[2/3] 正在检查文件是否已存在...")
-    for asset in release_data.get("assets", []):
-        if asset.get("name") in (target_asset_name, installer.name):
-            print(f"  [info] 发现已存在同名资产 (Asset ID: {asset['id']})，正在覆盖清理...")
-            del_status, _ = api_request(f"https://api.github.com/repos/{repo}/releases/assets/{asset['id']}", token, method="DELETE")
-            if del_status == 204:
-                print("  [OK] 已清理旧资产")
-            break
-
-    # 3. 上传安装包文件
+    # 2. 循环上传所有产物
+    print(f"\n[2/2] 开始批量上传产物 ({len(installers)} 个)...")
     upload_url_template = release_data.get("upload_url", "")
-    quoted_name = urllib.parse.quote(target_asset_name)
-    upload_url = upload_url_template.split("{")[0] + f"?name={quoted_name}"
+    successful_uploads = []
 
-    print(f"\n[3/3] 正在流式上传安装包 ({file_size_mb:.2f} MB)...")
-    reader = ProgressFileReader(installer)
+    for idx, installer in enumerate(installers, 1):
+        target_asset_name = installer.name.replace("柳如烟", "liuruyan")
+        file_size_mb = installer.stat().st_size / (1024 * 1024)
+        print(f"\n({idx}/{len(installers)}) 正在处理: {target_asset_name} ({file_size_mb:.2f} MB)")
 
-    try:
-        status, body = api_request(
-            upload_url,
-            token,
-            method="POST",
-            data=reader,
-            headers={
-                "Content-Type": "application/octet-stream",
-                "Content-Length": str(installer.stat().st_size),
-            },
-            timeout=900
-        )
-    finally:
-        reader.close()
+        # 检查是否已存在同名资产，有则清理覆盖
+        for asset in release_data.get("assets", []):
+            if asset.get("name") in (target_asset_name, installer.name):
+                print(f"  [info] 发现已存在资产 (Asset ID: {asset['id']})，正在覆盖清理...")
+                del_status, _ = api_request(f"https://api.github.com/repos/{repo}/releases/assets/{asset['id']}", token, method="DELETE")
+                if del_status == 204:
+                    print("  [OK] 已清理旧资产")
+                break
 
-    if status in (200, 201):
-        asset_info = json.loads(body.decode("utf-8"))
-        download_url = asset_info.get("browser_download_url")
-        print("\n============================================================")
-        print("  🎉 安装包已成功发布至 GitHub Releases！")
-        print("============================================================")
-        print(f"  Release 页面 : {release_data.get('html_url')}")
-        print(f"  直链下载地址 : {download_url}")
-        print("============================================================")
-    else:
-        err_msg = body.decode("utf-8", errors="ignore")
-        print(f"\n[ERROR] 安装包上传失败 (HTTP {status}): {err_msg}")
-        if "EOF" in err_msg or status == 500:
-            print("\n💡 提示：网络连接被中断，请确认本地 Clash / VPN 代理已正常开启（如 7897 端口）。")
-        sys.exit(1)
+        quoted_name = urllib.parse.quote(target_asset_name)
+        upload_url = upload_url_template.split("{")[0] + f"?name={quoted_name}"
+
+        print(f"  正在流式上传...")
+        reader = ProgressFileReader(installer)
+        try:
+            status, body = api_request(
+                upload_url,
+                token,
+                method="POST",
+                data=reader,
+                headers={
+                    "Content-Type": "application/octet-stream",
+                    "Content-Length": str(installer.stat().st_size),
+                },
+                timeout=900
+            )
+        finally:
+            reader.close()
+
+        if status in (200, 201):
+            asset_info = json.loads(body.decode("utf-8"))
+            download_url = asset_info.get("browser_download_url")
+            successful_uploads.append((target_asset_name, download_url))
+            print(f"  [OK] 上传成功！")
+        else:
+            err_msg = body.decode("utf-8", errors="ignore")
+            print(f"\n  [ERROR] 上传失败 (HTTP {status}): {err_msg}")
+
+    print("\n============================================================")
+    print(f"  🎉 发布完成！成功上传 {len(successful_uploads)} / {len(installers)} 个产物")
+    print("============================================================")
+    print(f"  Release 页面 : {release_data.get('html_url')}")
+    for name, d_url in successful_uploads:
+        print(f"  • {name} : {d_url}")
+    print("============================================================")
 
 
 if __name__ == "__main__":
