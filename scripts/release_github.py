@@ -17,6 +17,7 @@ import re
 from pathlib import Path
 import urllib.request
 import urllib.error
+import urllib.parse
 
 # 强制 UTF-8 控制台输出
 if hasattr(sys.stdout, "reconfigure"):
@@ -106,7 +107,7 @@ def get_github_token(root: Path) -> str:
     return user_token
 
 
-def api_request(url: str, token: str, method: str = "GET", data: bytes | None = None, headers: dict | None = None):
+def api_request(url: str, token: str, method: str = "GET", data: bytes | None = None, headers: dict | None = None, timeout: int = 60):
     req_headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
@@ -114,13 +115,17 @@ def api_request(url: str, token: str, method: str = "GET", data: bytes | None = 
     }
     if headers:
         req_headers.update(headers)
+    if data is not None:
+        req_headers["Content-Length"] = str(len(data))
 
     req = urllib.request.Request(url, data=data, headers=req_headers, method=method)
     try:
-        with urllib.request.urlopen(req) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             return resp.status, resp.read()
     except urllib.error.HTTPError as e:
         return e.code, e.read()
+    except Exception as e:
+        return 500, str(e).encode("utf-8")
 
 
 def main():
@@ -198,7 +203,8 @@ def main():
 
     # 3. 上传安装包文件
     upload_url_template = release_data.get("upload_url", "")
-    upload_url = upload_url_template.split("{")[0] + f"?name={installer.name}"
+    quoted_name = urllib.parse.quote(installer.name)
+    upload_url = upload_url_template.split("{")[0] + f"?name={quoted_name}"
 
     print(f"\n[3/3] 正在上传安装包 ({file_size_mb:.2f} MB)，根据网络状况可能需要数十秒至几分钟...")
     file_bytes = installer.read_bytes()
@@ -208,7 +214,8 @@ def main():
         token,
         method="POST",
         data=file_bytes,
-        headers={"Content-Type": "application/octet-stream"}
+        headers={"Content-Type": "application/octet-stream"},
+        timeout=600
     )
 
     if status in (200, 201):
