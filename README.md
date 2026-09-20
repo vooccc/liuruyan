@@ -9,8 +9,22 @@
   <img src="https://img.shields.io/badge/Frontend-React_18_%7C_TypeScript-61dafb?logo=react" alt="React" />
   <img src="https://img.shields.io/badge/Backend-Python_3.11_Harness-yellow?logo=python" alt="Python" />
   <img src="https://img.shields.io/badge/Protocol-MCP_%7C_Claude_Skills-purple" alt="MCP & Skills" />
+  <a href="https://github.com/vooccc/liuruyan/releases"><img src="https://img.shields.io/badge/Release-Download-brightgreen?logo=windows" alt="Download" /></a>
   <img src="https://img.shields.io/badge/License-LGPL_3.0-blue" alt="License" />
 </p>
+
+---
+
+## 📥 客户端安装包下载
+
+> 💡 如果您只需开箱即用，无需配置 Python / Rust / Node.js 等开发环境，推荐直接下载官方已构建的安装程序：
+
+| 操作系统 | 架构 | 安装包类型 | 下载渠道 | 说明 |
+| :--- | :--- | :--- | :--- | :--- |
+| **Windows 10 / 11** | x64 | `.exe` (NSIS 安装包) | [🚀 GitHub Releases 最新版下载](https://github.com/vooccc/liuruyan/releases/latest) | 推荐，开箱即用 |
+| **Windows 便携版** | x64 | `.zip` (免安装绿色包) | [📦 查看全部发布版本 (Releases)](https://github.com/vooccc/liuruyan/releases) | 解压即用，配置随身携带 |
+
+> 📌 **国内网络提示**：若访问 GitHub Releases 较慢，可在 Release 页面通过加速镜像下载，或在 Release 说明中查看国内网盘备用分流链接。
 
 ---
 
