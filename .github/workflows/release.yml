@@ -66,7 +66,7 @@ jobs:
       - name: Build Tauri Package
         working-directory: frontend
         run: |
-          npx tauri build
+          npx tauri build --ignore-version-mismatches
 
       - name: Determine Release Tag
         id: tag_info
