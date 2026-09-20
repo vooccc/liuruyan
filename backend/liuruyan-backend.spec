@@ -5,8 +5,13 @@ import sys as _sys
 from PyInstaller.utils.hooks import collect_data_files
 from PyInstaller.utils.hooks import collect_submodules
 
+_spec_dir = os.path.dirname(os.path.abspath(SPEC)) if 'SPEC' in dir() else os.path.dirname(os.path.abspath(__file__)) if '__file__' in dir() else os.path.abspath('.')
+_harness_path = os.path.abspath(os.path.join(_spec_dir, 'packages', 'harness'))
+if os.path.isdir(_harness_path) and _harness_path not in _sys.path:
+    _sys.path.insert(0, _harness_path)
+
 _entry = '_entry.py'
-_pathex = ['..']
+_pathex = ['..', _harness_path]
 
 datas = []
 hiddenimports = []
@@ -71,6 +76,12 @@ hiddenimports += collect_submodules('docx')      # python-docx 模块名是 docx
 hiddenimports += collect_submodules('pptx')      # python-pptx 模块名是 pptx
 hiddenimports += collect_submodules('openpyxl')
 hiddenimports += collect_submodules('nbformat')  # .ipynb 支持
+# v2 harness 核心包（98 个子模块，包括 buses, channels, guards, llm 等）
+hiddenimports += collect_submodules('liuruyan')
+
+# 将 packages/harness 完整目录打入 backend/packages/harness，保障资源与动态加载
+if os.path.isdir(_harness_path):
+    datas += [(_harness_path, 'backend/packages/harness')]
 
 
 a = Analysis(

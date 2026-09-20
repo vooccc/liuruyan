@@ -11,8 +11,26 @@ P0 落地时本模块在 backend/tool_id_contract.py。P1-B-1 搬到 harness：
 P1-B-2 的 AnthropicApiClient（在 harness 里）需要 ensure_tool_id，
 所以本模块的真身必须在 harness。
 """
-from __future__ import annotations
+try:
+    from liuruyan.llm.tool_id_contract import ensure_tool_id, synthesize_tool_id
+except ImportError:
+    import logging
+    import uuid
+    from typing import Any
 
-from liuruyan.llm.tool_id_contract import ensure_tool_id, synthesize_tool_id
+    _logger = logging.getLogger(__name__)
+
+    def synthesize_tool_id(origin: str) -> str:
+        synth = f"toolu_synth_{uuid.uuid4().hex[:16]}"
+        _logger.warning("[TOOL-ID-SYNTHESIZED] origin=%s id=%s", origin, synth)
+        return synth
+
+    def ensure_tool_id(value: Any, origin: str) -> str:
+        if value is None:
+            return synthesize_tool_id(origin)
+        s = str(value).strip()
+        if not s:
+            return synthesize_tool_id(origin)
+        return s
 
 __all__ = ["ensure_tool_id", "synthesize_tool_id"]

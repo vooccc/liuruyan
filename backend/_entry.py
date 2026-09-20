@@ -41,6 +41,12 @@ def _ensure_backend_on_path() -> None:
         base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if base not in sys.path:
         sys.path.insert(0, base)
+    for harness_cand in (
+        os.path.join(base, "backend", "packages", "harness"),
+        os.path.join(base, "packages", "harness"),
+    ):
+        if os.path.isdir(harness_cand) and harness_cand not in sys.path:
+            sys.path.insert(0, harness_cand)
 
 
 def _crash_log(exc: BaseException) -> None:
