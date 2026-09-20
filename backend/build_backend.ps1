@@ -1,4 +1,4 @@
-# Build backend sidecar exe for Tauri packaging using PyInstaller.
+﻿# Build backend sidecar exe for Tauri packaging using PyInstaller.
 # Generates a standalone sidecar binary without encryption/obfuscation overhead.
 # Run from any directory — the script re-anchors to its own folder.
 
