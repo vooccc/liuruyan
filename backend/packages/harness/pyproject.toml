@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "liuruyan-harness"
+version = "0.1.0"
+description = "柳如烟 v2 重构核心包：runtime / buses / agents / middlewares / ..."
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["liuruyan*"]

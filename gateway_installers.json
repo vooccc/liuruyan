@@ -1,0 +1,18 @@
+{
+  "installers": {
+    "claude_code": {
+      "target_path": "~/.claude\\settings.json",
+      "last_install_at": "2026-09-17T00:10:55.708381+00:00",
+      "written_hash": "7f7078eff9f5a0197287aa7e436afd53da57e0369c5fa51b6178348e793352a3",
+      "backup_paths": [
+                                      ]
+    },
+    "codex": {
+      "target_path": "~/.codex\\config.toml",
+      "last_install_at": "2026-09-16T15:22:23.989801+00:00",
+      "written_hash": "481a01ed8bcf2540887ff6b502ac93bae7a41195d88faf3e7dfeace99cea25c0",
+      "backup_paths": [
+                                              ]
+    }
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "productName": "柳如烟",
+  "version": "2.0.17",
+  "identifier": "com.liuruyan.agent",
+  "build": {
+    "beforeDevCommand": "npm run dev:tauri",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "柳如烟",
+        "width": 1100,
+        "height": 720,
+        "minWidth": 800,
+        "minHeight": 550,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true,
+        "decorations": false,
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "publisher": "LiuRuYan",
+    "shortDescription": "柳如烟智能体",
+    "longDescription": "柳如烟 — 多智能体协作桌面工作台",
+    "category": "Productivity",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "externalBin": ["binaries/liuruyan-backend"],
+    "windows": {
+      "wix": {
+        "language": ["zh-CN"]
+      },
+      "nsis": {
+        "installMode": "both",
+        "languages": ["SimpChinese"]
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "",
+      "endpoints": [
+        "https://github.com/vooccc/liuruyan/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}

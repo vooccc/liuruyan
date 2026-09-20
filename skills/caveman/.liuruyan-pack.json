@@ -1,0 +1,13 @@
+{
+  "pack_name": "caveman",
+  "source": {
+    "source": "url",
+    "url": "https://www.github.com/JuliusBrussee/caveman.git"
+  },
+  "plugin_root_relative": ".",
+  "installed_at": 1783049503.19972,
+  "installed_version": null,
+  "last_updated_at": 1783049515.0137112,
+  "has_venv": true,
+  "notes": ""
+}

@@ -1,0 +1,8 @@
+{
+  "enabled": true,
+  "allowed_actions": null,
+  "blocked_actions": [],
+  "max_per_second": 5,
+  "max_per_minute": 60,
+  "auto_screenshot_after_mutate": false
+}

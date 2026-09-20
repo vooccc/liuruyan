@@ -1,0 +1,13 @@
+{
+  "pack_name": "webnovel-writer",
+  "source": {
+    "source": "github",
+    "repo": "lingfengQAQ/webnovel-writer"
+  },
+  "plugin_root_relative": "webnovel-writer",
+  "installed_at": 1779815554.6259618,
+  "installed_version": "6.0.0",
+  "last_updated_at": null,
+  "has_venv": true,
+  "notes": ""
+}

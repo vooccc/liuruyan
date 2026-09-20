@@ -1,0 +1,293 @@
+{
+  "mcpServers": {
+    "notion": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@notionhq/notion-mcp-server"
+      ],
+      "env": {
+        "OPENAPI_MCP_HEADERS": "{\"Authorization\": \"Bearer YOUR_INTEGRATION_TOKEN\", \"Notion-Version\": \"2022-06-28\"}"
+      },
+      "url": null,
+      "headers": {},
+      "transport": null,
+      "enabled": false,
+      "timeout": 120,
+      "connect_timeout": 60,
+      "description": "Notion 工作区集成：页面、数据库读写。",
+      "cwd": null,
+      "agents": [
+        "*"
+      ],
+      "concurrency_class": "read",
+      "sampling": {
+        "enabled": false,
+        "allowed_models": [],
+        "max_tokens_cap": 4096,
+        "max_rpm": 10
+      },
+      "elicitation": {
+        "enabled": true,
+        "timeout_seconds": 60
+      },
+      "oauth": null
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "."
+      ],
+      "env": {},
+      "url": null,
+      "headers": {},
+      "transport": null,
+      "enabled": false,
+      "timeout": 120,
+      "connect_timeout": 60,
+      "description": "访问本地文件系统：读、写、搜索目录树。仅作用于 args 中显式指定的目录。",
+      "cwd": null,
+      "agents": [
+        "*"
+      ],
+      "concurrency_class": "read",
+      "sampling": {
+        "enabled": false,
+        "allowed_models": [],
+        "max_tokens_cap": 4096,
+        "max_rpm": 10
+      },
+      "elicitation": {
+        "enabled": true,
+        "timeout_seconds": 60
+      },
+      "oauth": null
+    },
+    "memory": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-memory"
+      ],
+      "env": {},
+      "url": null,
+      "headers": {},
+      "transport": null,
+      "enabled": false,
+      "timeout": 120,
+      "connect_timeout": 60,
+      "description": "知识图谱式持久记忆：跨会话存取实体关系。",
+      "cwd": null,
+      "agents": [
+        "*"
+      ],
+      "concurrency_class": "read",
+      "sampling": {
+        "enabled": false,
+        "allowed_models": [],
+        "max_tokens_cap": 4096,
+        "max_rpm": 10
+      },
+      "elicitation": {
+        "enabled": true,
+        "timeout_seconds": 60
+      },
+      "oauth": null
+    },
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest"
+      ],
+      "env": {},
+      "url": null,
+      "headers": {},
+      "transport": null,
+      "enabled": true,
+      "timeout": 120,
+      "connect_timeout": 60,
+      "description": "浏览器自动化：通过结构化无障碍快照操作网页（无需截图）。",
+      "cwd": null,
+      "agents": [
+        "*"
+      ],
+      "concurrency_class": "read",
+      "sampling": {
+        "enabled": false,
+        "allowed_models": [],
+        "max_tokens_cap": 4096,
+        "max_rpm": 10
+      },
+      "elicitation": {
+        "enabled": true,
+        "timeout_seconds": 60
+      },
+      "oauth": null
+    },
+    "fetch": {
+      "command": "uvx",
+      "args": [
+        "mcp-server-fetch"
+      ],
+      "env": {},
+      "url": null,
+      "headers": {},
+      "transport": null,
+      "enabled": false,
+      "timeout": 120,
+      "connect_timeout": 60,
+      "description": "抓取任意 URL 并返回正文（markdown 化）。",
+      "cwd": null,
+      "agents": [
+        "*"
+      ],
+      "concurrency_class": "read",
+      "sampling": {
+        "enabled": false,
+        "allowed_models": [],
+        "max_tokens_cap": 4096,
+        "max_rpm": 10
+      },
+      "elicitation": {
+        "enabled": true,
+        "timeout_seconds": 60
+      },
+      "oauth": null
+    },
+    "github": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-github"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": ""
+      },
+      "url": null,
+      "headers": {},
+      "transport": null,
+      "enabled": false,
+      "timeout": 120,
+      "connect_timeout": 60,
+      "description": "GitHub MCP server：仓库浏览、Issue/PR 管理、代码搜索。",
+      "cwd": null,
+      "agents": [
+        "*"
+      ],
+      "concurrency_class": "read",
+      "sampling": {
+        "enabled": false,
+        "allowed_models": [],
+        "max_tokens_cap": 4096,
+        "max_rpm": 10
+      },
+      "elicitation": {
+        "enabled": true,
+        "timeout_seconds": 60
+      },
+      "oauth": null
+    },
+    "git": {
+      "command": "uvx",
+      "args": [
+        "mcp-server-git",
+        "--repository",
+        "."
+      ],
+      "env": {},
+      "url": null,
+      "headers": {},
+      "transport": null,
+      "enabled": false,
+      "timeout": 120,
+      "connect_timeout": 60,
+      "description": "本地 Git 仓库交互：log / diff / show / blame。",
+      "cwd": null,
+      "agents": [
+        "*"
+      ],
+      "concurrency_class": "read",
+      "sampling": {
+        "enabled": false,
+        "allowed_models": [],
+        "max_tokens_cap": 4096,
+        "max_rpm": 10
+      },
+      "elicitation": {
+        "enabled": true,
+        "timeout_seconds": 60
+      },
+      "oauth": null
+    },
+    "codegraph": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@colbymchenry/codegraph",
+        "serve",
+        "--mcp"
+      ],
+      "env": {},
+      "url": null,
+      "headers": {},
+      "transport": null,
+      "enabled": true,
+      "timeout": 120,
+      "connect_timeout": 60,
+      "description": "CodeGraph 本地代码知识图谱：symbol search、context、callers/callees、impact、trace。",
+      "cwd": ".",
+      "agents": [
+        "*"
+      ],
+      "concurrency_class": "read",
+      "sampling": {
+        "enabled": false,
+        "allowed_models": [],
+        "max_tokens_cap": 4096,
+        "max_rpm": 10
+      },
+      "elicitation": {
+        "enabled": true,
+        "timeout_seconds": 60
+      },
+      "oauth": null
+    },
+    "fast-context": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "--prefer-online",
+        "@sammysnake/fast-context-mcp"
+      ],
+      "env": {
+        "FC_HIDE_EXTRACT_KEY_TOOL": "1"
+      },
+      "url": null,
+      "headers": {},
+      "transport": null,
+      "enabled": true,
+      "timeout": 180,
+      "connect_timeout": 90,
+      "description": "Fast Context：自然语言语义搜代码，借 Windsurf Devstral 生成 rg/read/tree 命令并本地执行，返回文件+行区间+建议 grep 关键词。API key 自动从本机 Devin 安装提取。",
+      "cwd": ".",
+      "agents": [
+        "*"
+      ],
+      "concurrency_class": "read",
+      "sampling": {
+        "enabled": false,
+        "allowed_models": [],
+        "max_tokens_cap": 4096,
+        "max_rpm": 10
+      },
+      "elicitation": {
+        "enabled": true,
+        "timeout_seconds": 60
+      },
+      "oauth": null
+    }
+  }
+}

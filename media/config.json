@@ -1,0 +1,64 @@
+{
+  "platforms": [
+    {
+      "key": "wechat_mp",
+      "name": "微信公众号",
+      "emoji": "💬",
+      "icon": "/media-icons/wechat_mp.svg",
+      "home": "https://mp.weixin.qq.com/",
+      "accounts": [
+        {
+          "id": "mqgc9s3slxkk",
+          "name": "精英玩卡",
+          "url": ""
+        },
+        {
+          "id": "mqgcryndn672",
+          "name": "性能测试自动化",
+          "url": "",
+          "appid": "wx864aa892991e7786",
+          "secret": "136683cf6df639771f1fd77ccf012418",
+          "thumb_media_id": ""
+        }
+      ]
+    },
+    {
+      "key": "xiaohongshu",
+      "name": "小红书",
+      "emoji": "📕",
+      "icon": "/media-icons/xiaohongshu.svg",
+      "home": "https://creator.xiaohongshu.com/",
+      "accounts": [
+        {
+          "id": "mqgcaoqtw1ab",
+          "name": "是自由的气息啊",
+          "url": ""
+        }
+      ]
+    },
+    {
+      "key": "zhihu",
+      "name": "知乎",
+      "emoji": "🔵",
+      "icon": "/media-icons/zhihu.svg",
+      "home": "https://zhuanlan.zhihu.com/write",
+      "accounts": []
+    },
+    {
+      "key": "bilibili",
+      "name": "B站",
+      "emoji": "📺",
+      "icon": "/media-icons/bilibili.svg",
+      "home": "https://member.bilibili.com/",
+      "accounts": []
+    },
+    {
+      "key": "douyin",
+      "name": "抖音",
+      "emoji": "🎵",
+      "icon": "/media-icons/douyin.svg",
+      "home": "https://creator.douyin.com/",
+      "accounts": []
+    }
+  ]
+}

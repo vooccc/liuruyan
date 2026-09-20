@@ -1,0 +1,7 @@
+{
+  "mode": "devin",
+  "custom_provider": "custom-huzq1wggki",
+  "custom_model": "gpt-5.6-sol",
+  "devin_token": "devin-session-token$eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzZXNzaW9uX2lkIjoid2luZHN1cmYtc2Vzc2lvbi00YjY5ZGJjOThkNGU0M2MwYTcwNTQyODc1OWVhMjZlOSJ9.uJI_tBU5lDx0bdx47tAlzD-rhVkAFGz6GMNigQgaFo4",
+  "max_turns": 3
+}

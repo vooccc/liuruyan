@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="alternate icon" type="image/png" href="/favicon.png" />
+    <!-- PWA (M8a)：让"添加到主屏"后启动接近原生 app；详见 _docs/REMOTE_M8A.md -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#0d1117" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="柳如烟" />
+    <link rel="apple-touch-icon" href="/favicon.png" />
+    <title>柳如烟</title>
+    <script>
+      // 在 React mount 之前根据 localStorage.theme 预设 --bg-color，
+      // 避免 CSS :root 默认暗色 apply 之后又被 React 的 theme effect 覆盖成亮色
+      // 这段视觉跳变（light 主题用户看到的"闪黑屏"）。
+      // 只预设 --bg-color；其余变量由 React useEffect 负责。
+      (function () {
+        try {
+          var t = localStorage.getItem('theme') || 'dark';
+          var bg = t === 'light' ? '#faf8f5' : '#0d1117';
+          document.documentElement.style.setProperty('--bg-color', bg);
+        } catch (e) { /* localStorage 禁用时 fallback CSS :root 默认 */ }
+      })();
+    </script>
+    <script>
+      // FAIL-SAFE BOOT ERROR REPORTER
+      // 在 main bundle 加载之前先装好——任何 import / 顶层执行 / async boot 阶段错误
+      // 都能直接 innerHTML 显示在屏幕上，不依赖浏览器 DevTools。
+      //
+      // 用纯 ES5 写（function 声明 / var / 字符串拼接 / 无箭头函数 / 无模板字符串），
+      // 避免老内核浏览器（MIUI Browser / Android WebView 旧版 / iOS Safari < 13 等）
+      // 在 parse 这段代码本身时就 SyntaxError 死掉。
+      //
+      // 历史教训：M8a 远程访问落地后用户手机访问黑屏，没 DevTools 无从定位；
+      // 加这段后 MIUI 这种"看不到 console"的浏览器也能把错误打到屏幕上，
+      // 是定位"远程访问环境下手机端 boot 失败"的瞳孔扩大工具。
+      //
+      // 移除条件：未来如果柳如烟前端有完整的远程错误上报通道（如 Sentry web sdk
+      // 配上 source map）且证明手机端能稳定上报启动期错误，可以拆掉这段——
+      // 但当前 devTelemetry 的 /debug/frontend_events 上报本身依赖 React mount 后注册的
+      // listener，boot 阶段 fail 时根本不会触发，所以这段是补它的盲区。
+      (function () {
+        var shown = false;
+        function escapeHtml(s) {
+          return String(s).replace(/[&<>"']/g, function (c) {
+            return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+          });
+        }
+        function showError(label, err) {
+          if (shown) return;
+          shown = true;
+          try {
+            var msg = (err && err.stack) || (err && err.message) || String(err);
+            var ua = (navigator && navigator.userAgent) || '';
+            // user-select + -webkit-user-select 全开，方便用户长按选中复制错误信息
+            // （手机上没 DevTools，截图截不到全文时只能靠复制粘贴）。
+            // white-space:pre-wrap + word-break:break-all 让长字符串自动换行不被截断。
+            var baseUserSelect = 'user-select:text;-webkit-user-select:text;-webkit-touch-callout:default;';
+            var html =
+              '<div style="position:fixed;top:0;left:0;right:0;bottom:0;background:#fff;color:#000;font:13px monospace;padding:16px;overflow:auto;z-index:99999;' + baseUserSelect + '">' +
+              '<h2 style="color:#c00;margin:0 0 8px;font-size:16px;' + baseUserSelect + '">柳如烟启动失败</h2>' +
+              '<p style="margin:0 0 4px;' + baseUserSelect + '"><b>' + escapeHtml(label) + '</b></p>' +
+              '<pre style="background:#f6f8fa;padding:8px;border:1px solid #ddd;margin:0;font-size:12px;white-space:pre-wrap;word-break:break-all;overflow-wrap:break-word;' + baseUserSelect + '">' + escapeHtml(msg) + '</pre>' +
+              '<p style="color:#666;margin:12px 0 0;font-size:11px;white-space:pre-wrap;word-break:break-all;' + baseUserSelect + '">URL: ' + escapeHtml(location.href) + '<br>UA: ' + escapeHtml(ua) + '</p>' +
+              '</div>';
+            var root = document.body || document.documentElement;
+            if (root) root.innerHTML = html;
+          } catch (_) { /* 兜底的兜底也挂了，无能为力 */ }
+        }
+        window.addEventListener('error', function (e) {
+          showError('全局错误 (window.error)',
+            e.error || e.message || ('script error @ ' + (e.filename || '?') + ':' + (e.lineno || 0)));
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+          showError('未处理的 Promise rejection', e.reason);
+        });
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

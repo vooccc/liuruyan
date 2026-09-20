@@ -1,0 +1,15 @@
+{
+  "tavily_api_key": "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",
+  "exa_api_key": "64e88b6f-b729-441b-91dc-bc6e66c48217",
+  "devin_api_key": "devin-session-token$eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzZXNzaW9uX2lkIjoid2luZHN1cmYtc2Vzc2lvbi00YjY5ZGJjOThkNGU0M2MwYTcwNTQyODc1OWVhMjZlOSJ9.uJI_tBU5lDx0bdx47tAlzD-rhVkAFGz6GMNigQgaFo4",
+  "enabled_engines": {
+    "devin": true,
+    "exa": true,
+    "tavily": true
+  },
+  "priority_order": [
+    "devin",
+    "exa",
+    "tavily"
+  ]
+}

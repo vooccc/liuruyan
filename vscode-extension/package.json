@@ -1,0 +1,153 @@
+{
+  "name": "liuruyan-vscode",
+  "displayName": "柳如烟",
+  "description": "在 VSCode / Windsurf 里使用柳如烟（连接你的自定义大模型 provider）",
+  "version": "0.0.6",
+  "publisher": "vooccc",
+  "private": true,
+  "license": "UNLICENSED",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "AI",
+    "Chat",
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "liuruyan-sidebar",
+          "title": "柳如烟",
+          "icon": "media/icon-activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "liuruyan-sidebar": [
+        {
+          "type": "webview",
+          "id": "liuruyan.sidebarView",
+          "name": "柳如烟",
+          "contextualTitle": "柳如烟",
+          "icon": "media/icon-activity.svg"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "liuruyan.openPanel",
+        "title": "Liuruyan: Open Panel (Editor)",
+        "category": "Liuruyan",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "liuruyan.focusSidebar",
+        "title": "Liuruyan: Focus Sidebar",
+        "category": "Liuruyan",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "liuruyan.diff.acceptHunk",
+        "title": "Liuruyan: Accept Hunk",
+        "category": "Liuruyan Diff"
+      },
+      {
+        "command": "liuruyan.diff.rejectHunk",
+        "title": "Liuruyan: Reject Hunk",
+        "category": "Liuruyan Diff"
+      },
+      {
+        "command": "liuruyan.diff.acceptAll",
+        "title": "Liuruyan: Accept All Changes in File",
+        "category": "Liuruyan Diff"
+      },
+      {
+        "command": "liuruyan.diff.rejectAll",
+        "title": "Liuruyan: Reject All Changes in File",
+        "category": "Liuruyan Diff"
+      },
+      {
+        "command": "liuruyan.diff.nextChange",
+        "title": "Liuruyan: Go to Next Change",
+        "category": "Liuruyan Diff"
+      },
+      {
+        "command": "liuruyan.diff.prevChange",
+        "title": "Liuruyan: Go to Previous Change",
+        "category": "Liuruyan Diff"
+      },
+      {
+        "command": "liuruyan.diff.abortSession",
+        "title": "Liuruyan: Abort Diff Session (Revert to Baseline)",
+        "category": "Liuruyan Diff"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "liuruyan.focusSidebar",
+          "group": "navigation@99",
+          "when": "editorIsOpen"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "liuruyan.focusSidebar",
+        "key": "ctrl+alt+l",
+        "mac": "cmd+alt+l"
+      },
+      {
+        "command": "liuruyan.diff.nextChange",
+        "key": "f8",
+        "when": "liuruyan.diff.active && editorTextFocus"
+      },
+      {
+        "command": "liuruyan.diff.prevChange",
+        "key": "shift+f8",
+        "when": "liuruyan.diff.active && editorTextFocus"
+      },
+      {
+        "command": "liuruyan.diff.acceptAll",
+        "key": "ctrl+shift+enter",
+        "mac": "cmd+shift+enter",
+        "when": "liuruyan.diff.active && editorTextFocus"
+      },
+      {
+        "command": "liuruyan.diff.rejectAll",
+        "key": "ctrl+shift+backspace",
+        "mac": "cmd+shift+backspace",
+        "when": "liuruyan.diff.active && editorTextFocus"
+      },
+      {
+        "command": "liuruyan.diff.abortSession",
+        "key": "escape",
+        "when": "liuruyan.diff.active && editorTextFocus && !suggestWidgetVisible && !findWidgetVisible"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package"
+  },
+  "dependencies": {
+    "diff": "^9.0.0",
+    "express": "^4.21.0"
+  },
+  "devDependencies": {
+    "@types/diff": "^7.0.2",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.x",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.0.0",
+    "typescript": "^5.3.0"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "enabled": true,
+  "host": "127.0.0.1",
+  "cors": true,
+  "require_token": true,
+  "idle_timeout_secs": 180,
+  "log_request_body": false
+}

@@ -1,0 +1,20 @@
+{
+  "name": "10万+爆款选题制造机",
+  "installedAt": 1781593913060,
+  "source": "marketplace",
+  "version": "1.0.0",
+  "skillId": "skill_2060353101233287168",
+  "examples_zh": [
+    "帮我想个公众号选题，最近这个热点怎么蹭",
+    "给这篇文章起 5 个爆款标题",
+    "这段素材适合做成短视频还是漫画？帮我出个方案"
+  ],
+  "examples_en": [
+    "Help me come up with a WeChat article topic around this trending news",
+    "Write 5 viral headlines for this article",
+    "Is this material better as a short video or a comic? Give me a plan"
+  ],
+  "iconSource": "https://openplatform-cdn.codebuddy.cn/public/operation-platform/skill-icons/skill_2060353101233287168/b784fdc60beee8f9.svg",
+  "iconLocalPath": "",
+  "iconDownloadedFrom": "https://openplatform-cdn.codebuddy.cn/public/operation-platform/skill-icons/skill_2060353101233287168/b784fdc60beee8f9.svg"
+}

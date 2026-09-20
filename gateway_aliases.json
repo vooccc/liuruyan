@@ -1,0 +1,20 @@
+{
+  "aliases": {
+    "fumeng": {
+      "candidates": [
+        "custom-5ho6ku4rcw:gpt-5.5"
+      ],
+      "description": "",
+      "created_at": "2026-05-23T21:54:34",
+      "updated_at": "2026-05-23T21:54:34"
+    },
+    "8yes-gpt5.5": {
+      "candidates": [
+        "custom-31l2g2kk7v:gpt-5.5"
+      ],
+      "description": "",
+      "created_at": "2026-06-01T12:24:38",
+      "updated_at": "2026-06-01T12:24:38"
+    }
+  }
+}

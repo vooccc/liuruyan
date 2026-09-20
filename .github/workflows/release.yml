@@ -1,0 +1,87 @@
+name: 📦 Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-release:
+    name: 🚀 Build and Release Desktop App
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: ⚙️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          cache-dependency-path: "frontend/package-lock.json"
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: "backend/requirements.txt"
+
+      - name: 🦀 Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: 📦 Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            frontend/src-tauri/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: 🔧 Install Backend Dependencies & PyInstaller
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install pyinstaller
+
+      - name: 🔨 Build Python Backend Sidecar
+        shell: pwsh
+        run: |
+          cd backend
+          python -m PyInstaller liuruyan-backend.spec --distpath dist --workpath build --clean -y
+          New-Item -ItemType Directory -Force -Path ..\frontend\src-tauri\binaries | Out-Null
+          Copy-Item dist\liuruyan-backend.exe -Destination ..\frontend\src-tauri\binaries\liuruyan-backend-x86_64-pc-windows-msvc.exe -Force
+          Write-Host "Backend sidecar build complete."
+
+      - name: 📦 Install Frontend Dependencies
+        shell: bash
+        run: |
+          cd frontend
+          npm ci
+
+      - name: 🏗️ Build Tauri App & Publish Release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        with:
+          projectPath: "./frontend"
+          tagName: ${{ github.ref_name }}
+          releaseName: "柳如烟 v__VERSION__"
+          releaseBody: "柳如烟桌面客户端最新版本发布。包含前端更新与后端独立运行环境。详细日志请查看 CHANGELOG.zh-CN.md"
+          releaseDraft: false
+          prerelease: false

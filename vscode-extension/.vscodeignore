@@ -1,0 +1,26 @@
+.vscode/**
+.vscode-test/**
+src/**
+.gitignore
+.editorconfig
+*.bat
+**/tsconfig.json
+**/tsconfig.*.json
+**/*.map
+**/*.tsbuildinfo
+package-lock.json
+# 注意：node_modules **不** 整体排除——express 是 runtime 依赖必须打进包。
+# vsce 默认不区分 dev/runtime dependencies，全打。我们手动剔除 dev 的依赖减体积：
+node_modules/@types/**
+node_modules/typescript/**
+node_modules/@vscode/vsce/**
+# 剔除 vendor 内部的源码、文档、测试、map（vsce 不会跑这些）：
+node_modules/**/*.ts
+node_modules/**/*.map
+node_modules/**/test/**
+node_modules/**/tests/**
+node_modules/**/.bin/**
+node_modules/**/CHANGELOG*
+node_modules/**/HISTORY*
+node_modules/**/*.markdown
+!out/**

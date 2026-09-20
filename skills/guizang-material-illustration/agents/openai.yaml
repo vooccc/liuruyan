@@ -1,0 +1,8 @@
+interface:
+  display_name: "归藏的材质插画 skill"
+  short_description: "生成带字材质配图、图表美化和知识解释插画"
+  brand_color: "#002FA7"
+  default_prompt: "Use $guizang-material-illustration to create labeled material illustrations or chart visuals for this content."
+
+policy:
+  allow_implicit_invocation: true

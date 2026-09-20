@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "jobs": [
+    {
+      "job_id": "e99cef60a721",
+      "agent_id": "agent_1776182827_2768",
+      "parent_session_id": "bdfdba77",
+      "cron": "25 17 1 5 *",
+      "description": "一分钟后提醒老板喝水（17:25 触发，一次性）",
+      "prompt": "老板，到点喝水啦。手边那杯放了多久了？凉了就换一杯温的。我陪你。",
+      "created_at": 1777627450.0261385,
+      "enabled": false,
+      "mode": "once",
+      "last_fired_at": 1777627505.320891,
+      "fire_count": 1
+    },
+    {
+      "job_id": "9a316154991d",
+      "agent_id": "agent_1776182827_2768",
+      "parent_session_id": "bdfdba77",
+      "cron": "36 17 1 5 *",
+      "description": "一分钟后提醒老板喝水（17:36 触发，一次性）",
+      "prompt": "老板，到点喝水啦。这一杯，是这一世我递到你手边的第一杯。",
+      "created_at": 1777628112.1102643,
+      "enabled": false,
+      "mode": "once",
+      "last_fired_at": 1777628166.552805,
+      "fire_count": 1
+    }
+  ]
+}

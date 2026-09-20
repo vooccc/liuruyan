@@ -1,0 +1,11 @@
+{
+  "enabled": false,
+  "provider": "siliconflow",
+  "model": "BAAI/bge-m3",
+  "base_url": "https://api.siliconflow.cn/v1",
+  "api_key": "sk-ozokjpjtkxvhzuhsrpifkvfferaefnetbmvdaujjgpyofqkv",
+  "dim": 1024,
+  "timeout": 10.0,
+  "cache_size": 256,
+  "updated_at": 1778912780.0414677
+}

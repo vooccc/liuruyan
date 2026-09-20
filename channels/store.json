@@ -1,0 +1,38 @@
+{
+  "_schema_version": 1,
+  "channels": [
+    {
+      "id": "dingtalk-test",
+      "channel": "dingtalk",
+      "config": {
+        "client_id": "dinggthrzofaekpgzaxl",
+        "client_secret": "ckO_NtPdn-9vfoCEdMAEKdHrE6iq9-_TFSN7RKo00m6JhhJV8BvVnsnt6sPlFbzz",
+        "default_agent": "default"
+      },
+      "enabled": true,
+      "created_at": 1746000000.0
+    },
+    {
+      "id": "如烟大帝",
+      "channel": "dingtalk",
+      "config": {
+        "client_id": "dingq1nhkli5bao7afrq",
+        "client_secret": "-CgCqrjxR6VhDnNek6r-4BeMeD5Rjf9yBnygxfN_JuakBFhHXgx5eTs33XWQKRtA",
+        "default_agent": "agent_1776182827_2768"
+      },
+      "enabled": true,
+      "created_at": 1777601823.1837757
+    },
+    {
+      "id": "沈",
+      "channel": "dingtalk",
+      "config": {
+        "client_id": "dingqhrt1y1tedcs1mr3",
+        "client_secret": "UaIfm60UhX2mVqiR464I8VtkuZyd6z5ezOLG2cHBT7QApsP8JydcOnJFnvf8ZwdC",
+        "default_agent": "agent_1776142164_4029"
+      },
+      "enabled": true,
+      "created_at": 1777604547.6262538
+    }
+  ]
+}

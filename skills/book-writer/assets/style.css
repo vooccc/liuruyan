@@ -1,0 +1,382 @@
+/* ============================================================
+   中文排版系统 — style.css
+   用法：构建时通过 books.config.js 注入 CSS 变量
+   所有颜色通过 :root 变量控制，一套 CSS 适配多本书
+   ============================================================ */
+
+/* ---------- 配色变量（由构建脚本动态替换） ---------- */
+:root {
+  --c-main:     /* 主色，由 book.color 替换 */;
+  --c-gold:     /* 金色，由 book.accentGold 替换，默认 #D4A843 */;
+  --c-lightbg:  /* 浅背景，由 book.lightBg 替换 */;
+  --c-accentbg: /* 强调背景，由 book.accentBg 替换 */;
+
+  /* 字族 */
+  --fn-hei:  "Source Han Sans SC", "Noto Sans CJK SC", "Microsoft YaHei", "SimHei", sans-serif;
+  --fn-song: "Source Han Serif SC", "Noto Serif CJK SC", "SimSun", "宋体", serif;
+  --fn-kai:  "KaiTi", "STKaiti", "楷体", serif;
+}
+
+/* ---------- 页面设置 ---------- */
+@page {
+  size: A4;
+  margin: 25mm 20mm;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: var(--fn-song);
+  font-size: 11pt;
+  line-height: 1.8;
+  color: #1a1a1a;
+  background: #fff;
+}
+
+/* ---------- 标题系统 ---------- */
+
+/* 章标题：左对齐、无字间距、仅下边框、自动分页 */
+h1 {
+  font-family: var(--fn-hei);
+  font-size: 24pt;
+  font-weight: 700;
+  text-align: left;          /* 不居中 */
+  letter-spacing: 0;         /* 无字间距 */
+  color: var(--c-main);
+  border-bottom: 3px solid var(--c-main);
+  padding-bottom: 8px;
+  margin-top: 0;
+  margin-bottom: 24px;
+  page-break-before: always; /* 每章新页 */
+}
+
+/* 节标题：左侧色条 */
+h2 {
+  font-family: var(--fn-hei);
+  font-size: 17pt;
+  font-weight: 600;
+  color: var(--c-main);
+  border-left: 4px solid var(--c-main);
+  padding-left: 12px;
+  background: var(--c-lightbg);
+  margin-top: 32px;
+  margin-bottom: 16px;
+}
+
+h3 {
+  font-family: var(--fn-hei);
+  font-size: 13pt;
+  font-weight: 600;
+  color: #333;
+  margin-top: 24px;
+  margin-bottom: 12px;
+}
+
+h4 {
+  font-family: var(--fn-hei);
+  font-size: 11.5pt;
+  font-weight: 600;
+  color: #444;
+  margin-top: 20px;
+  margin-bottom: 10px;
+}
+
+/* ---------- 正文 ---------- */
+
+/* 所有段落 2em 首行缩进，无例外 */
+p {
+  font-family: var(--fn-song);
+  font-size: 11pt;
+  text-indent: 2em;          /* 中文标准：2em 缩进 */
+  text-align: justify;       /* 两端对齐 */
+  margin: 0 0 10px 0;
+  line-height: 1.8;
+}
+
+/* ---------- 语义元素 ---------- */
+
+/* 金句：楷体、金色左边条、浅背景、左对齐（不居中） */
+p.jinqu {
+  font-family: var(--fn-kai);
+  font-size: 11pt;
+  color: var(--c-main);
+  font-weight: 600;
+  text-align: justify;
+  text-indent: 2em;
+  border-left: 3px solid var(--c-gold);
+  background: var(--c-accentbg);
+  border-radius: 0 4px 4px 0;
+  padding: 10px 14px 10px 16px;
+  margin: 16px 0;
+}
+
+/* 题引：楷体、灰色、两端对齐（不居中、不斜体） */
+p.epigraph {
+  font-family: var(--fn-kai);
+  font-size: 11pt;
+  color: #666;
+  text-align: justify;
+  text-indent: 2em;
+  border-bottom: 1px solid rgba(0,0,0,.08);
+  padding-bottom: 12px;
+  margin-bottom: 24px;
+}
+
+/* 章尾过渡语：右对齐、小字 */
+p.chapter-next {
+  font-family: var(--fn-kai);
+  font-size: 9.5pt;
+  color: #999;
+  text-align: right;
+  text-indent: 0;
+  margin-top: 24px;
+  border-top: 1px dashed #ddd;
+  padding-top: 8px;
+}
+
+/* CTA 框：金色左边条、渐变背景 */
+.cta-box {
+  background: linear-gradient(135deg, var(--c-accentbg), var(--c-lightbg));
+  border-left: 5px solid var(--c-gold);
+  border-radius: 6px;
+  padding: 16px 20px;
+  margin: 20px 0;
+  font-family: var(--fn-hei);
+  font-size: 11pt;
+}
+
+.cta-box p {
+  text-indent: 0;
+  margin: 0;
+}
+
+/* 流程块：黑体、预格式、浅背景 */
+.flow-block {
+  background: var(--c-accentbg);
+  border-left: 4px solid var(--c-main);
+  border-radius: 0 4px 4px 0;
+  padding: 16px 20px;
+  margin: 16px 0;
+  font-family: var(--fn-hei);
+  font-size: 10pt;
+  white-space: pre-wrap;
+  line-height: 1.7;
+}
+
+/* ---------- 表格 ---------- */
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--fn-song);
+  font-size: 10pt;
+  margin: 16px 0;
+}
+
+th {
+  font-family: var(--fn-hei);
+  font-weight: 600;
+  background: var(--c-main);
+  color: #fff;
+  padding: 8px 12px;
+  text-align: left;
+  border: 1px solid var(--c-main);
+}
+
+td {
+  padding: 7px 12px;
+  border: 1px solid #ddd;
+  vertical-align: top;
+}
+
+tr:nth-child(even) td {
+  background: var(--c-lightbg);
+}
+
+/* ---------- 列表 ---------- */
+
+ul, ol {
+  font-family: var(--fn-song);
+  font-size: 11pt;
+  margin: 8px 0 8px 2em;
+  padding: 0;
+}
+
+li {
+  margin-bottom: 4px;
+  line-height: 1.8;
+}
+
+/* 自检清单（Checklist）*/
+ul.checklist {
+  list-style: none;
+  margin-left: 0;
+  padding: 0;
+}
+
+ul.checklist li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+ul.checklist li::before {
+  content: '';
+  display: inline-block;
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--c-main);
+  border-radius: 3px;
+  margin-top: 4px;
+}
+
+/* ---------- 代码块 ---------- */
+
+pre {
+  background: var(--c-lightbg);
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 14px 16px;
+  margin: 16px 0;
+  overflow-x: auto;
+  font-size: 10pt;
+}
+
+code {
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: 10pt;
+}
+
+p code {
+  background: var(--c-lightbg);
+  padding: 1px 4px;
+  border-radius: 2px;
+  font-size: 9.5pt;
+}
+
+/* ---------- 引用块 ---------- */
+
+blockquote {
+  border-left: 4px solid var(--c-gold);
+  background: var(--c-lightbg);
+  padding: 12px 16px;
+  margin: 16px 0;
+  border-radius: 0 4px 4px 0;
+}
+
+blockquote p {
+  text-indent: 0;
+  margin: 0;
+  color: #555;
+  font-family: var(--fn-kai);
+}
+
+/* ---------- 图表 ---------- */
+
+.figure {
+  text-align: center;
+  margin: 24px 0;
+  page-break-inside: avoid;
+}
+
+.figure-caption {
+  font-family: var(--fn-hei);
+  font-size: 9.5pt;
+  color: #666;
+  margin-top: 8px;
+}
+
+/* ---------- 封面页 ---------- */
+
+.cover-page {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  background: linear-gradient(160deg, var(--c-main), #0a2d4a);
+  color: #fff;
+  text-align: center;
+  page-break-after: always;
+}
+
+.cover-title {
+  font-family: var(--fn-hei);
+  font-size: 32pt;
+  font-weight: 700;
+  letter-spacing: 2px;
+  margin-bottom: 16px;
+}
+
+.cover-subtitle {
+  font-family: var(--fn-kai);
+  font-size: 16pt;
+  color: rgba(255,255,255,.8);
+  margin-bottom: 48px;
+}
+
+.cover-author {
+  font-family: var(--fn-song);
+  font-size: 12pt;
+  color: rgba(255,255,255,.7);
+}
+
+/* ---------- 目录页 ---------- */
+
+.toc-page {
+  page-break-before: always;
+  page-break-after: always;
+}
+
+.toc-title {
+  font-family: var(--fn-hei);
+  font-size: 20pt;
+  color: var(--c-main);
+  border-bottom: 2px solid var(--c-main);
+  padding-bottom: 8px;
+  margin-bottom: 24px;
+}
+
+.toc-chapter {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--fn-hei);
+  font-size: 11pt;
+  color: var(--c-main);
+  margin: 12px 0 4px;
+}
+
+.toc-section {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--fn-song);
+  font-size: 10pt;
+  color: #444;
+  margin: 4px 0 4px 2em;
+}
+
+.toc-dots {
+  flex: 1;
+  border-bottom: 1px dotted #ccc;
+  margin: 0 8px 4px;
+}
+
+/* ---------- 版权页 ---------- */
+
+.copyright-page {
+  page-break-before: always;
+  padding-top: 60%;
+  font-family: var(--fn-song);
+  font-size: 9pt;
+  color: #888;
+  line-height: 2;
+}
+
+/* ---------- 页眉页脚（Puppeteer headerTemplate）---------- */
+/* 
+  页眉：左侧书名，右侧章名
+  页脚：居中页码
+  在 build.mjs 的 page.pdf() 中配置 headerTemplate/footerTemplate
+*/
