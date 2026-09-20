@@ -31,6 +31,13 @@ echo.
 
 rem --- 前置检查 1: backend venv ---
 if not exist "backend\venv\Scripts\python.exe" (
+    if exist "..\柳如烟\backend\venv\Scripts\python.exe" (
+        echo [info] 检测到同级工程主虚拟环境，正在建立秒级软联接...
+        if not exist "backend" mkdir backend
+        mklink /J "backend\venv" "..\柳如烟\backend\venv" >nul 2>&1
+    )
+)
+if not exist "backend\venv\Scripts\python.exe" (
     echo [ERROR] 未找到 backend\venv\Scripts\python.exe
     echo.
     echo 请先在 backend/ 下建虚拟环境并安装依赖:
@@ -44,6 +51,12 @@ if not exist "backend\venv\Scripts\python.exe" (
 
 rem --- 前置检查 2: ripgrep 二进制 ---
 if not exist "vendor\ripgrep\x64-win32\rg.exe" (
+    if exist "..\柳如烟\vendor\ripgrep\x64-win32\rg.exe" (
+        if not exist "vendor" mkdir vendor
+        mklink /J "vendor\ripgrep" "..\柳如烟\vendor\ripgrep" >nul 2>&1
+    )
+)
+if not exist "vendor\ripgrep\x64-win32\rg.exe" (
     echo [pre] 未发现 vendor\ripgrep\x64-win32\rg.exe，调 bootstrap 下载...
     "backend\venv\Scripts\python.exe" "scripts\bootstrap_ripgrep.py"
     if errorlevel 1 (
@@ -54,6 +67,12 @@ if not exist "vendor\ripgrep\x64-win32\rg.exe" (
 )
 
 rem --- 前置检查 3: node_modules ---
+if not exist "frontend\node_modules" (
+    if exist "..\柳如烟\frontend\node_modules" (
+        echo [info] 检测到同级工程前端依赖，正在建立秒级软联接...
+        mklink /J "frontend\node_modules" "..\柳如烟\frontend\node_modules" >nul 2>&1
+    )
+)
 if not exist "frontend\node_modules" (
     echo [1/3] 首次打包，装 npm 依赖...
     pushd frontend
@@ -67,6 +86,14 @@ if not exist "frontend\node_modules" (
     )
     popd
     echo.
+)
+
+rem --- 前置检查 4: backend sidecar 二进制 ---
+if not exist "frontend\src-tauri\binaries\liuruyan-backend-x86_64-pc-windows-msvc.exe" (
+    if exist "..\柳如烟\frontend\src-tauri\binaries" (
+        echo [info] 检测到同级工程后端二进制，正在建立秒级软联接...
+        mklink /J "frontend\src-tauri\binaries" "..\柳如烟\frontend\src-tauri\binaries" >nul 2>&1
+    )
 )
 
 rem --- 修复: Tauri build script 在中文路径下读 permissions toml 编码崩 ---

@@ -16,6 +16,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $TauriConfPath = Join-Path $ProjectRoot "frontend\src-tauri\tauri.conf.json"
