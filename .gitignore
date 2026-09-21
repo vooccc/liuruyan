@@ -62,3 +62,8 @@ Thumbs.db
 scratch/
 .github_token
 models.secrets.json
+
+# 本地打包与发布脚本（仅本地使用，忽略上传）
+/一键打包.bat
+/一键发布.bat
+/scripts/release_github.py
