@@ -80,6 +80,8 @@ hiddenimports += collect_submodules('openpyxl')
 hiddenimports += collect_submodules('nbformat')  # .ipynb 支持
 # v2 harness 核心包（98 个子模块，包括 buses, channels, guards, llm 等）
 hiddenimports += collect_submodules('liuruyan')
+# ACP 外部智能体协议 SDK
+hiddenimports += collect_submodules('acp')
 
 # 将 packages/harness 完整目录打入 backend/packages/harness，保障资源与动态加载
 if os.path.isdir(_harness_path):

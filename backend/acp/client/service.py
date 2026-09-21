@@ -16,8 +16,14 @@ import shutil
 import sys
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
-import acp
-from acp.schema import TextContentBlock
+try:
+    import acp
+    from acp.schema import TextContentBlock
+    ACP_AVAILABLE = True
+except ImportError:
+    acp = None
+    TextContentBlock = None
+    ACP_AVAILABLE = False
 
 from .client_impl import LiuruyanACPClient
 
@@ -281,6 +287,8 @@ def agent_availability(agent: str) -> Dict[str, Any]:
     provider_key = _get_provider_api_key(effective_provider_id) if not env_has_all else None
     resolved_via = "env" if env_has_all else ("provider" if provider_key else "none")
     _, missing = resolve_spawn_env(cfg, agent_name=agent)
+    if not ACP_AVAILABLE:
+        missing.append("agent-client-protocol SDK 未安装或未打包")
 
     return {
         "agent": agent,
@@ -359,6 +367,13 @@ async def run_external_agent_turn(
             "success": False,
             "agent": agent,
             "error": f"Unknown agent '{agent}'. Available: {list_external_agents()}",
+        }
+
+    if not ACP_AVAILABLE:
+        return {
+            "success": False,
+            "agent": agent,
+            "error": "ACP 协议库 (agent-client-protocol) 未安装或未打包，无法启动外部 agent。",
         }
 
     cfg = EXTERNAL_AGENTS[agent]

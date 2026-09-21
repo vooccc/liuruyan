@@ -22,6 +22,7 @@ idna==3.11
 jedi==0.19.2
 jiter==0.14.0
 mcp>=1.0.0  # MCP (Model Context Protocol) Python SDK：MCP 子系统客户端/服务端基础
+agent-client-protocol>=0.1.0  # ACP (Agent Client Protocol) SDK：外部智能体代理与协作协议
 multidict==6.7.1
 nbformat==5.10.4
 numpy>=1.26,<3.0  # embedding 长期记忆向量索引（@d:\AI_Project\柳如烟\backend\embedding_index.py）；纯 numpy 实现余弦相似度，N<10K 时 <5ms，不引 chromadb/faiss 重依赖

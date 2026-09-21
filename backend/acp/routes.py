@@ -25,30 +25,31 @@ class ProviderOverrideBody(BaseModel):
 
 @router.get("/external_agents")
 async def list_external_agents_status() -> Dict[str, Any]:
-    """返回所有外部 ACP agent 的当前可用性状态。
-
-    Response:
-        {
-            "agents": [
-                {
-                    "agent": "claude-code",
-                    "description": "...",
-                    "command": "npx",
-                    "env_required": ["ANTHROPIC_API_KEY"],
-                    "provider_id": "anthropic",
-                    "available": true,
-                    "missing_env": [],
-                    "resolved_via": "provider"  // env / provider / none
-                },
-                ...
-            ]
-        }
-    """
-    from backend.acp.client.service import EXTERNAL_AGENTS, agent_availability
-
+    """返回所有外部 ACP agent 的当前可用性状态。"""
     rows: List[Dict[str, Any]] = []
-    for name in EXTERNAL_AGENTS.keys():
-        rows.append(agent_availability(name))
+    try:
+        from backend.acp.client.service import EXTERNAL_AGENTS, agent_availability
+
+        for name in EXTERNAL_AGENTS.keys():
+            try:
+                rows.append(agent_availability(name))
+            except Exception as err:
+                logger.error("Failed to check ACP agent '%s' availability: %s", name, err)
+                rows.append({
+                    "agent": name,
+                    "description": "",
+                    "command": "",
+                    "env_required": [],
+                    "provider_id": None,
+                    "effective_provider_id": None,
+                    "compatible_providers": [],
+                    "available": False,
+                    "missing_env": [],
+                    "resolved_via": "none",
+                    "error": str(err),
+                })
+    except Exception as exc:
+        logger.error("Failed to load ACP service: %s", exc)
     return {"agents": rows}
 
 

@@ -7,9 +7,9 @@ echo   RuYan Agent Launcher
 echo ========================================
 echo.
 
-rem Dev mode: pin data dir to project root (prod installer uses ~/.liuruyan).
-set "LIURUYAN_DATA_DIR=%~dp0"
-if "%LIURUYAN_DATA_DIR:~-1%"=="\" set "LIURUYAN_DATA_DIR=%LIURUYAN_DATA_DIR:~0,-1%"
+rem Dev mode: use ~/.liuruyan-dev (isolated from prod ~/.liuruyan and git source tree).
+set "LIURUYAN_DATA_DIR=%USERPROFILE%\.liuruyan-dev"
+if not exist "%LIURUYAN_DATA_DIR%" mkdir "%LIURUYAN_DATA_DIR%"
 
 rem v2 channels (Phase E) opt-in. set 0 to disable.
 set "LIURUYAN_V2_CHANNELS=1"
