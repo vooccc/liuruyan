@@ -1,0 +1,103 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- 柳如烟 · 应用图标 v2.0
+       设计语言：
+         · 主视觉 = Vesica Piscis（双圆相交 / 神圣几何）
+             → 二元合一 / 辩证统一 / 哲学艺术色彩
+             → 双脑 / 双模型协作 / AI 智核
+         · 对称工整的水平镜像 + 十字四向锚点
+         · 扁平几何 + 金属暖金渐变（高端商务）
+         · 中心冷色核（冰蓝）→ 科技感 / 活泼的点睛之笔
+       几何参数（严格 Vesica Piscis）：
+         · 画布 1024，圆角 224（22%）
+         · 两圆半径 R=200，圆心距 D=R=200（标准 Vesica）
+         · 左圆心 (412, 512)，右圆心 (612, 512)
+         · 共同中心 (512, 512)
+  -->
+
+  <defs>
+    <!-- 暖墨底（深邃、商务） -->
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"   stop-color="#1a1410"/>
+      <stop offset="55%"  stop-color="#0c0807"/>
+      <stop offset="100%" stop-color="#05040a"/>
+    </linearGradient>
+
+    <!-- 中心环境光晕（左上暖光 + 全局暖底） -->
+    <radialGradient id="ambient" cx="0.22" cy="0.18" r="0.8">
+      <stop offset="0%"   stop-color="#d4b084" stop-opacity="0.16"/>
+      <stop offset="100%" stop-color="#d4b084" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- 金属暖金渐变（主环） -->
+    <linearGradient id="gold" x1="0.15" y1="0" x2="0.85" y2="1">
+      <stop offset="0%"   stop-color="#f6e2bb"/>
+      <stop offset="45%"  stop-color="#c4a77d"/>
+      <stop offset="100%" stop-color="#7a5c3d"/>
+    </linearGradient>
+
+    <!-- 冷色智核（活泼点睛） -->
+    <radialGradient id="core" cx="0.5" cy="0.42" r="0.62">
+      <stop offset="0%"    stop-color="#ffffff"/>
+      <stop offset="35%"   stop-color="#c9e4ff"/>
+      <stop offset="75%"   stop-color="#5aa8e6"/>
+      <stop offset="100%"  stop-color="#2a6ea8"/>
+    </radialGradient>
+
+    <!-- 中心发光底 -->
+    <radialGradient id="bloom" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%"   stop-color="#7fc3ff" stop-opacity="0.35"/>
+      <stop offset="55%"  stop-color="#5aa8e6" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#5aa8e6" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- 左圆裁剪区（取两圆交集） -->
+    <clipPath id="leftRing">
+      <circle cx="412" cy="512" r="200"/>
+    </clipPath>
+  </defs>
+
+  <!-- ========== 底板 ========== -->
+  <rect width="1024" height="1024" rx="224" ry="224" fill="url(#bg)"/>
+  <rect width="1024" height="1024" rx="224" ry="224" fill="url(#ambient)"/>
+
+  <!-- ========== 中心发光底（铺在双环之下） ========== -->
+  <circle cx="512" cy="512" r="300" fill="url(#bloom)"/>
+
+  <!-- ========== Vesica Piscis 交集高亮（冷色智核） ========== -->
+  <g clip-path="url(#leftRing)">
+    <circle cx="612" cy="512" r="200" fill="url(#core)" opacity="0.95"/>
+  </g>
+
+  <!-- ========== 双金环（主视觉） ========== -->
+  <g fill="none" stroke="url(#gold)" stroke-width="40" stroke-linejoin="round">
+    <circle cx="412" cy="512" r="200"/>
+    <circle cx="612" cy="512" r="200"/>
+  </g>
+
+  <!-- ========== 中心能量核（最亮点，对称轴焦点） ========== -->
+  <circle cx="512" cy="512" r="34" fill="#ffffff" opacity="0.98"/>
+  <circle cx="512" cy="512" r="18" fill="#3f95d8"/>
+  <circle cx="512" cy="512" r="7"  fill="#ffffff"/>
+
+  <!-- ========== 十字四向锚点（工整对称 / AI 图谱节点） ========== -->
+  <g fill="url(#gold)">
+    <circle cx="512" cy="192" r="16"/>
+    <circle cx="512" cy="832" r="16"/>
+    <circle cx="192" cy="512" r="14"/>
+    <circle cx="832" cy="512" r="14"/>
+  </g>
+
+  <!-- ========== 内环节点（上下对称各 2 点，呼应相交带） ========== -->
+  <g fill="url(#gold)" opacity="0.88">
+    <circle cx="512" cy="339" r="7"/>
+    <circle cx="512" cy="685" r="7"/>
+  </g>
+
+  <!-- ========== 对称辅助短线（科技感辐射，极低调） ========== -->
+  <g stroke="url(#gold)" stroke-width="2" opacity="0.32" stroke-linecap="round">
+    <line x1="512" y1="218" x2="512" y2="262"/>
+    <line x1="512" y1="762" x2="512" y2="806"/>
+    <line x1="218" y1="512" x2="262" y2="512"/>
+    <line x1="762" y1="512" x2="806" y2="512"/>
+  </g>
+</svg>

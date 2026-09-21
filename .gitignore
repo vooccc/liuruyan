@@ -1,0 +1,64 @@
+# Logs & Temporary Files
+*.log
+*.tmp
+*.crash
+*.bak
+*.jsonl
+
+# Environment & Credentials
+.env
+.env.*
+!.env.example
+models.secrets.json
+john_creds.env
+tts.json
+!tts.example.json
+
+# Runtime Data (Created on first run)
+audit/
+traces/
+users/
+uploads/
+memory/
+council/
+studio/
+data/
+
+# Node.js
+node_modules/
+dist/
+.eslintcache
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+
+# Rust / Tauri
+target/
+src-tauri/target/
+frontend/src-tauri/target/
+frontend/src-tauri/binaries/*.exe
+!frontend/src-tauri/binaries/.gitkeep
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+.gemini/
+.claude/
+.cursor/
+scratch/
+.github_token
+models.secrets.json

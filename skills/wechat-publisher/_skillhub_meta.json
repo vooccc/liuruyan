@@ -1,0 +1,18 @@
+{
+  "name": "Wechat Publisher",
+  "installedAt": 1781609046694,
+  "source": "marketplace",
+  "version": "0.1.0",
+  "skillId": "skill_2054902455876030464",
+  "examples_zh": [
+    "把这篇 Markdown 发到我的公众号草稿箱",
+    "用青金石主题把文章推到公众号，代码块用 solarized-light 高亮",
+    "帮我把这篇技术博客转成微信公众号格式并发布"
+  ],
+  "examples_en": [
+    "Push this markdown article to my WeChat Official Account drafts",
+    "Publish my blog post to WeChat with the lapis theme and code highlighting",
+    "Convert and publish this markdown to WeChat Official Account"
+  ],
+  "iconSource": "letter:auto"
+}

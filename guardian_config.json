@@ -1,0 +1,16 @@
+{
+  "overrides": {
+    "agent_1776142164_4029": {
+      "write_backend": "ALLOW"
+    },
+    "agent_1776182827_2768": {
+      "write_backend": "ALLOW"
+    },
+    "agent_1778739225_4394": {
+      "other_private": "ALLOW"
+    },
+    "agent_1782711902_7726": {
+      "write_backend": "ALLOW"
+    }
+  }
+}

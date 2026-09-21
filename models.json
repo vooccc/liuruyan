@@ -1,0 +1,2956 @@
+{
+  "current_model": "big-pickle",
+  "current_provider": "custom-wcpohmp1jp",
+  "prompt_caching_enabled": true,
+  "providers": {
+    "custom-huzq1wggki": {
+      "id": "custom-huzq1wggki",
+      "name": "justwoker",
+      "base_url": "https://api.justwoker.icu/v1",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "anthropic_messages",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "gpt-5.6-sol",
+          "name": "gpt-5.6-sol",
+          "tags": [
+            "reasoning",
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 1050000
+        }
+      ]
+    },
+    "custom-gdzx9xx2in": {
+      "id": "custom-gdzx9xx2in",
+      "name": "千刀",
+      "base_url": "https://api.zzzcoding.org",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "anthropic_messages",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "claude-opus-5",
+          "name": "claude-opus-5",
+          "tags": [
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 200000
+        }
+      ]
+    },
+    "custom-5kb982t6n4": {
+      "id": "custom-5kb982t6n4",
+      "name": "派大星Claude",
+      "base_url": "https://api.aigo0.com",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "anthropic_messages",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "claude-opus-5",
+          "name": "claude-opus-5",
+          "tags": [
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 200000
+        },
+        {
+          "id": "claude-fable-5",
+          "name": "claude-fable-5",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 1000000
+        }
+      ]
+    },
+    "custom-uopk87h3is": {
+      "id": "custom-uopk87h3is",
+      "name": "AIHub",
+      "base_url": "https://aihub.top",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": []
+    },
+    "custom-hpz03rwsl6": {
+      "id": "custom-hpz03rwsl6",
+      "name": "派大星GPTPro",
+      "base_url": "https://api.aigo0.com",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "gpt-5.6-sol",
+          "name": "gpt-5.6-sol",
+          "tags": [
+            "reasoning",
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 1050000
+        }
+      ]
+    },
+    "custom-yx565bncmc": {
+      "id": "custom-yx565bncmc",
+      "name": "tokenrouter",
+      "base_url": "https://api.tokenrouter.com/v1",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "z-ai/glm-5.3-free",
+          "name": "z-ai/glm-5.3-free",
+          "tags": [
+            "free",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        }
+      ]
+    },
+    "custom-klos834gw3": {
+      "id": "custom-klos834gw3",
+      "name": "api.aigc.red",
+      "base_url": "https://api.aigc.red",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "baize-fable-5",
+          "name": "baize-fable-5",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        }
+      ]
+    },
+    "custom-c54aoa8lbt": {
+      "id": "custom-c54aoa8lbt",
+      "name": "gorouter.app",
+      "base_url": "https://gorouter.app",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "claude-opus-5",
+          "name": "claude-opus-5",
+          "tags": [
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 200000
+        }
+      ]
+    },
+    "custom-yvlcpkod1j": {
+      "id": "custom-yvlcpkod1j",
+      "name": "grokcli-2api",
+      "base_url": "http://127.0.0.1:40081/v1",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "grok-4.5",
+          "name": "grok-4.5",
+          "tags": [
+            "reasoning",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 500000
+        }
+      ]
+    },
+    "custom-ep9lha43qk": {
+      "id": "custom-ep9lha43qk",
+      "name": "raymux-grok2api",
+      "base_url": "https://api.raymux.com",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "grok-4.5",
+          "name": "grok-4.5",
+          "tags": [
+            "reasoning",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 500000
+        }
+      ]
+    },
+    "custom-tzesjgxxzy": {
+      "id": "custom-tzesjgxxzy",
+      "name": "raymux",
+      "base_url": "https://api.raymux.com",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "grok-4.5",
+          "name": "grok-4.5",
+          "tags": [
+            "reasoning",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 500000
+        },
+        {
+          "id": "gpt-5.6-sol",
+          "name": "gpt-5.6-sol",
+          "tags": [
+            "reasoning",
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 1050000
+        }
+      ]
+    },
+    "custom-qvk6v4wyvh": {
+      "id": "custom-qvk6v4wyvh",
+      "name": "https://jiurelay.com",
+      "base_url": "https://jiurelay.com/anthropic/v1",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "anthropic_messages",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "claude-sonnet-5",
+          "name": "claude-sonnet-5",
+          "tags": [
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 1000000
+        }
+      ]
+    },
+    "custom-lw658ll3qq": {
+      "id": "custom-lw658ll3qq",
+      "name": "168661",
+      "base_url": "https://grok.168661.xyz/v1",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "本地E5-2680 V4 256G 1TSSD*2+16T机械*8,挂甲骨文4+24的S5代理",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "grok-4.5",
+          "name": "grok-4.5",
+          "tags": [
+            "reasoning",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 500000
+        }
+      ]
+    },
+    "custom-vag0rsolx1": {
+      "id": "custom-vag0rsolx1",
+      "name": "agentrouter.org",
+      "base_url": "https://agentrouter.org",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "签到 https://agentrouter.org/console",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": []
+    },
+    "custom-byssk387s9": {
+      "id": "custom-byssk387s9",
+      "name": "公益核桃酥",
+      "base_url": "https://gy.hetaosu.xyz/v1",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "grok-4.5-latest",
+          "name": "grok-4.5-latest",
+          "tags": [
+            "reasoning",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 500000
+        }
+      ]
+    },
+    "custom-osrg6rcl28": {
+      "id": "custom-osrg6rcl28",
+      "name": "百倍公益站",
+      "base_url": "https://sub.100xlabs.space",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "anthropic_messages",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "签到地址 https://sub.100xlabs.space/dashboard",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "claude-opus-5",
+          "name": "claude-opus-5",
+          "tags": [
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 200000
+        }
+      ]
+    },
+    "custom-44rt5312l4": {
+      "id": "custom-44rt5312l4",
+      "name": "林夕公益站",
+      "base_url": "https://k40.shengqainbang.cn",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "签到链接 https://k40.shengqainbang.cn/dashboard",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "claude-opus-5",
+          "name": "claude-opus-5",
+          "tags": [
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 200000
+        }
+      ]
+    },
+    "custom-lp4aemqpsn": {
+      "id": "custom-lp4aemqpsn",
+      "name": "林夕公益",
+      "base_url": "https://k40.shengqainbang.cn/v1",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "claude-opus-5",
+          "name": "claude-opus-5",
+          "tags": [
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 200000
+        }
+      ]
+    },
+    "custom-yw76bck9gy": {
+      "id": "custom-yw76bck9gy",
+      "name": "anyrouter.dev",
+      "base_url": "https://anyrouter.dev/api",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "openrouter/free",
+          "name": "Free Models Router",
+          "tags": [
+            "free",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        }
+      ]
+    },
+    "custom-d41eugo609": {
+      "id": "custom-d41eugo609",
+      "name": "raymux",
+      "base_url": "http://8.131.72.172/",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "grok-4.5",
+          "name": "grok-4.5",
+          "tags": [
+            "reasoning",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 500000
+        }
+      ]
+    },
+    "custom-jghi0tflik": {
+      "id": "custom-jghi0tflik",
+      "name": "0xpsyche",
+      "base_url": "https://welfare.0xpsyche.me/v1",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "gpt-5.6-sol",
+          "name": "gpt-5.6-sol",
+          "tags": [
+            "reasoning",
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 1050000
+        }
+      ]
+    },
+    "custom-y98udrs6wc": {
+      "id": "custom-y98udrs6wc",
+      "name": "keungliang",
+      "base_url": "https://keungliang.dpdns.org",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "公益站，低于20可签到",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "qwen3.8-max",
+          "name": "qwen3.8-max",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        }
+      ]
+    },
+    "custom-n4nxarross": {
+      "id": "custom-n4nxarross",
+      "name": "plus.jttt.net",
+      "base_url": "https://plus.jttt.net/",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "100个福利号，已破限，可以无限使用",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": []
+    },
+    "custom-56wypvkx58": {
+      "id": "custom-56wypvkx58",
+      "name": "8wan",
+      "base_url": "https://204.44.100.53/v1",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "gpt-5.6-sol",
+          "name": "GPT-5.6 Sol",
+          "tags": [
+            "reasoning",
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 1050000
+        }
+      ]
+    },
+    "custom-k7q8tqquvb": {
+      "id": "custom-k7q8tqquvb",
+      "name": "xhahlf.top",
+      "base_url": "https://api.xhahlf.top",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "grok-4.5",
+          "name": "grok-4.5",
+          "tags": [
+            "reasoning",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 500000
+        }
+      ]
+    },
+    "custom-7v5let4se0": {
+      "id": "custom-7v5let4se0",
+      "name": "axchen.top",
+      "base_url": "https://zwh.axchen.top",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "claude-fable-5",
+          "name": "Claude Fable 5",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 1000000
+        }
+      ]
+    },
+    "custom-swu02wnr22": {
+      "id": "custom-swu02wnr22",
+      "name": "君的星辰",
+      "base_url": "https://ai.centos.hk",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "0.01特惠分组gpt",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "gpt-5.6-sol",
+          "name": "gpt-5.6-sol",
+          "tags": [
+            "reasoning",
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 1050000
+        }
+      ]
+    },
+    "custom-zd7xf5mojx": {
+      "id": "custom-zd7xf5mojx",
+      "name": "君的公益",
+      "base_url": "https://muyuan.do",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "公益站，每天可签到",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "glm-5.2",
+          "name": "glm-5.2",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 1000000
+        }
+      ]
+    },
+    "custom-1bq1ov06np": {
+      "id": "custom-1bq1ov06np",
+      "name": "YOUC",
+      "base_url": "https://ai.youc.online/",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "gpt-5.5",
+          "name": "gpt-5.5",
+          "tags": [
+            "reasoning",
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        },
+        {
+          "id": "gpt-image-2",
+          "name": "gpt-image-2",
+          "tags": [
+            "image_gen"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        }
+      ]
+    },
+    "custom-60cqk5cc00": {
+      "id": "custom-60cqk5cc00",
+      "name": "docode.cc",
+      "base_url": "https://docode.cc/v1",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "公益站送300，每天可签到",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "gpt-5.5",
+          "name": "gpt-5.5",
+          "tags": [
+            "reasoning",
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        }
+      ]
+    },
+    "custom-4qxj0mzn58": {
+      "id": "custom-4qxj0mzn58",
+      "name": "guanyx.xyz",
+      "base_url": "https://newapi.guanyx.xyz",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "grok-4.5",
+          "name": "grok-4.5",
+          "tags": [
+            "reasoning",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        }
+      ]
+    },
+    "custom-5ezc4gyoeu": {
+      "id": "custom-5ezc4gyoeu",
+      "name": "zenmux",
+      "base_url": "https://zenmux.ai/api/v1",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "deepseek/deepseek-v4-flash-free",
+          "name": "DeepSeek: DeepSeek V4 Flash 0731 (Free)",
+          "tags": [
+            "free",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 128000
+        },
+        {
+          "id": "z-ai/glm-5.3-free",
+          "name": "Z.AI: GLM 5.3 (Free)",
+          "tags": [
+            "free",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        }
+      ]
+    },
+    "custom-6j8qe7qh68": {
+      "id": "custom-6j8qe7qh68",
+      "name": "cloudflare",
+      "base_url": "https://api.cloudflare.com/client/v4/accounts/d5077a57b6130e46d085f42881a69169/ai/v1",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "@cf/zai-org/glm-5.2",
+          "name": "@cf/zai-org/glm-5.2",
+          "tags": [],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        }
+      ]
+    },
+    "custom-r6jqe01i9i": {
+      "id": "custom-r6jqe01i9i",
+      "name": "移动",
+      "base_url": "https://moma.cmecloud.cn/v1",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "ZHIPU/GLM-5.2",
+          "name": "ZHIPU/GLM-5.2",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        }
+      ]
+    },
+    "custom-kvpn4k95hi": {
+      "id": "custom-kvpn4k95hi",
+      "name": "8yes",
+      "base_url": "https://8yes.cc",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "gpt-5.5",
+          "name": "gpt-5.5",
+          "tags": [
+            "reasoning",
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        },
+        {
+          "id": "gpt-5.6-sol",
+          "name": "gpt-5.6-sol",
+          "tags": [
+            "reasoning",
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        },
+        {
+          "id": "gpt-5.6-luna",
+          "name": "gpt-5.6-luna",
+          "tags": [
+            "reasoning",
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        },
+        {
+          "id": "gpt-5.6-terra",
+          "name": "gpt-5.6-terra",
+          "tags": [
+            "reasoning",
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        }
+      ]
+    },
+    "custom-q2lvqjtt2t": {
+      "id": "custom-q2lvqjtt2t",
+      "name": "移动云",
+      "base_url": "https://moma.cmecloud.cn/v1",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "qwen/qwen3.7-max",
+          "name": "qwen/qwen3.7-max",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        },
+        {
+          "id": "minimax/MiniMax-M3",
+          "name": "minimax/MiniMax-M3",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        },
+        {
+          "id": "ZHIPU/GLM-5.2",
+          "name": "ZHIPU/GLM-5.2",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        },
+        {
+          "id": "Kimi/Kimi-K2.7-code",
+          "name": "Kimi/Kimi-K2.7-code",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 200000
+        }
+      ]
+    },
+    "custom-1veqtf09y6": {
+      "id": "custom-1veqtf09y6",
+      "name": "huggingface",
+      "base_url": "https://router.huggingface.co/v1",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "zai-org/GLM-5.2",
+          "name": "zai-org/GLM-5.2",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        }
+      ]
+    },
+    "custom-ydf0o22qk5": {
+      "id": "custom-ydf0o22qk5",
+      "name": "小米MIMO",
+      "base_url": "https://token-plan-cn.xiaomimimo.com/v1",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": []
+    },
+    "custom-4zkozeobvq": {
+      "id": "custom-4zkozeobvq",
+      "name": "freemodel",
+      "base_url": "https://api.freemodel.dev",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "anthropic_messages",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "gpt-5.4",
+          "name": "gpt-5.4",
+          "tags": [
+            "reasoning",
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        },
+        {
+          "id": "gpt-5.5",
+          "name": "gpt-5.5",
+          "tags": [
+            "reasoning",
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        }
+      ]
+    },
+    "custom-ccdzysxvmu": {
+      "id": "custom-ccdzysxvmu",
+      "name": "COMMANDCODE",
+      "base_url": "https://api.commandcode.ai/provider/v1",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "Qwen/Qwen3.8-Max",
+          "name": "Qwen 3.8 Max",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        }
+      ]
+    },
+    "custom-c94ynfjs6g": {
+      "id": "custom-c94ynfjs6g",
+      "name": "Codex",
+      "base_url": "http://localhost:39772/v1",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "gpt-image-2",
+          "name": "gpt-image-2",
+          "tags": [
+            "image_gen"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        },
+        {
+          "id": "gpt-5.6-sol",
+          "name": "gpt-5.6-sol",
+          "tags": [
+            "reasoning",
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 400000
+        }
+      ]
+    },
+    "custom-cfiy37ht4n": {
+      "id": "custom-cfiy37ht4n",
+      "name": "CPA",
+      "base_url": "http://127.0.0.1:8317/v1",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "grok-4.5",
+          "name": "grok-4.5",
+          "tags": [
+            "reasoning",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        }
+      ]
+    },
+    "custom-d2j05mtlyv": {
+      "id": "custom-d2j05mtlyv",
+      "name": "商汤日日新",
+      "base_url": "https://token.sensenova.cn/v1",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "deepseek-v4-flash",
+          "name": "deepseek-v4-flash",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 128000
+        },
+        {
+          "id": "glm-5.2",
+          "name": "glm-5.2",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        },
+        {
+          "id": "kimi-k3",
+          "name": "kimi-k3",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 200000
+        },
+        {
+          "id": "deepseek-v4-pro",
+          "name": "deepseek-v4-pro",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 1000000
+        }
+      ]
+    },
+    "custom-741mdmi4ij": {
+      "id": "custom-741mdmi4ij",
+      "name": "智谱",
+      "base_url": "https://open.bigmodel.cn/api/anthropic",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "anthropic_messages",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "glm-5.2",
+          "name": "GLM-5.2",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        }
+      ]
+    },
+    "custom-ytzwy9svbo": {
+      "id": "custom-ytzwy9svbo",
+      "name": "OpenCodeGo",
+      "base_url": "https://opencode.ai/zen/go/v1",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "glm-5.1",
+          "name": "glm-5.1",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        },
+        {
+          "id": "qwen3.7-max",
+          "name": "qwen3.7-max",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        },
+        {
+          "id": "deepseek-v4-pro",
+          "name": "deepseek-v4-pro",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 128000
+        },
+        {
+          "id": "qwen3.7-plus",
+          "name": "qwen3.7-plus",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        },
+        {
+          "id": "minimax-m3",
+          "name": "minimax-m3",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        },
+        {
+          "id": "mimo-v2.5-pro",
+          "name": "mimo-v2.5-pro",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        },
+        {
+          "id": "deepseek-v4-flash",
+          "name": "deepseek-v4-flash",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 128000
+        },
+        {
+          "id": "glm-5",
+          "name": "glm-5",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        },
+        {
+          "id": "glm-5.2",
+          "name": "glm-5.2",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        },
+        {
+          "id": "kimi-k2.7-code",
+          "name": "kimi-k2.7-code",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 200000
+        }
+      ]
+    },
+    "custom-2n7ege73ik": {
+      "id": "custom-2n7ege73ik",
+      "name": "sharedchat.cc",
+      "base_url": "https://new.sharedchat.cc/codex",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "gpt-image-2",
+          "name": "gpt-image-2",
+          "tags": [
+            "image_gen"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        },
+        {
+          "id": "gpt-5.6-sol",
+          "name": "gpt-5.6-sol",
+          "tags": [
+            "reasoning",
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 1050000
+        }
+      ]
+    },
+    "custom-bchd1tv6hb": {
+      "id": "custom-bchd1tv6hb",
+      "name": "agnes-ai.com",
+      "base_url": "https://apihub.agnes-ai.com/v1",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "agnes-image-2.1-flash",
+          "name": "agnes-image-2.1-flash",
+          "tags": [
+            "image_gen"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        },
+        {
+          "id": "agnes-2.0-flash",
+          "name": "agnes-2.0-flash",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        },
+        {
+          "id": "agnes-video-v2.0",
+          "name": "agnes-video-v2.0",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        },
+        {
+          "id": "agnes-image-2.0-flash",
+          "name": "agnes-image-2.0-flash",
+          "tags": [
+            "image_gen"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        }
+      ]
+    },
+    "custom-nexkzpk00f": {
+      "id": "custom-nexkzpk00f",
+      "name": "cg",
+      "base_url": "http://localhost:18880/v1",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "codegeex-agent",
+          "name": "codegeex-agent",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        },
+        {
+          "id": "glm-5-1",
+          "name": "glm-5-1",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        }
+      ]
+    },
+    "custom-0du31mz707": {
+      "id": "custom-0du31mz707",
+      "name": "CodeGeex",
+      "base_url": "http://127.0.0.1:18788/v1",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "glm-5-1",
+          "name": "glm-5-1",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        }
+      ]
+    },
+    "custom-hwy4nl4i4y": {
+      "id": "custom-hwy4nl4i4y",
+      "name": "Cline",
+      "base_url": "http://127.0.0.1:8787/v1",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "deepseek/deepseek-v4-flash",
+          "name": "deepseek-v4-flash (free)",
+          "tags": [
+            "free",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 128000
+        },
+        {
+          "id": "xiaomi/mimo-v2.5",
+          "name": "mimo-v2.5 (free)",
+          "tags": [
+            "free",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        },
+        {
+          "id": "alibaba/qwen3.7-max",
+          "name": "qwen3.7-max (free)",
+          "tags": [
+            "free",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        },
+        {
+          "id": "alibaba/qwen3.7-plus",
+          "name": "qwen3.7-plus (free)",
+          "tags": [
+            "free",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        }
+      ]
+    },
+    "custom-ecy802ms8u": {
+      "id": "custom-ecy802ms8u",
+      "name": "讯飞",
+      "base_url": "https://maas-coding-api.cn-huabei-1.xf-yun.com/v2",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "astron-code-latest",
+          "name": "astron-code-latest",
+          "tags": [],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        }
+      ]
+    },
+    "custom-8zovaeworm": {
+      "id": "custom-8zovaeworm",
+      "name": "apifree.ai",
+      "base_url": "https://api.apifree.ai/",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "skywork-ai/skyclaw-v1",
+          "name": "skywork-ai/skyclaw-v1",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        },
+        {
+          "id": "deepseek-ai/deepseek-v4-pro",
+          "name": "deepseek-ai/deepseek-v4-pro",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 128000
+        },
+        {
+          "id": "deepseek-ai/deepseek-v4-pro-stable",
+          "name": "deepseek-ai/deepseek-v4-pro-stable",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 128000
+        }
+      ]
+    },
+    "custom-bynldvf2cs": {
+      "id": "custom-bynldvf2cs",
+      "name": "腾讯云",
+      "base_url": "https://tts.tencentcloudapi.com",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": []
+    },
+    "custom-5ho6ku4rcw": {
+      "id": "custom-5ho6ku4rcw",
+      "name": "浮梦",
+      "base_url": "https://fumeng.top/",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "gpt-5.5",
+          "name": "GPT-5.5",
+          "tags": [
+            "reasoning",
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        },
+        {
+          "id": "gpt-5.4",
+          "name": "GPT-5.4",
+          "tags": [
+            "reasoning",
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        },
+        {
+          "id": "gpt-image-2",
+          "name": "GPT Image 2",
+          "tags": [
+            "image_gen"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        }
+      ]
+    },
+    "custom-31l2g2kk7v": {
+      "id": "custom-31l2g2kk7v",
+      "name": "8yes.cc",
+      "base_url": "https://8yes.cc",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "anthropic_messages",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "代理",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "claude-opus-4-8",
+          "name": "claude-opus-4-8",
+          "tags": [
+            "reasoning",
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 200000
+        }
+      ]
+    },
+    "custom-cxt67pqfro": {
+      "id": "custom-cxt67pqfro",
+      "name": "cherry",
+      "base_url": "http://127.0.0.1:23333/v1",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": []
+    },
+    "custom-f22clqljw3": {
+      "id": "custom-f22clqljw3",
+      "name": "Nvidia",
+      "base_url": "https://integrate.api.nvidia.com",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "deepseek-ai/deepseek-v4-flash-0731",
+          "name": "deepseek-ai/deepseek-v4-flash-0731",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 128000
+        },
+        {
+          "id": "z-ai/glm-5.2",
+          "name": "z-ai/glm-5.2",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 1000000
+        }
+      ]
+    },
+    "custom-h70tnikoij": {
+      "id": "custom-h70tnikoij",
+      "name": "api.code-relay",
+      "base_url": "https://api.code-relay.com/",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "claude-opus-4-7",
+          "name": "claude-opus-4-7",
+          "tags": [
+            "reasoning",
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 200000
+        },
+        {
+          "id": "claude-opus-4-6",
+          "name": "claude-opus-4-6",
+          "tags": [
+            "reasoning",
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 200000
+        },
+        {
+          "id": "claude-opus-4-6-thinking-medium",
+          "name": "claude-opus-4-6-thinking-medium",
+          "tags": [
+            "reasoning",
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 200000
+        }
+      ]
+    },
+    "custom-rvurnj8w65": {
+      "id": "custom-rvurnj8w65",
+      "name": "pixelmuse",
+      "base_url": "https://pixelmuse.shop/",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "gpt-5.5",
+          "name": "gpt-5.5",
+          "tags": [
+            "reasoning",
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        }
+      ]
+    },
+    "custom-c46nw5uctd": {
+      "id": "custom-c46nw5uctd",
+      "name": "pixelmuse",
+      "base_url": "https://pixelmuse.shop",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "gpt-5.5",
+          "name": "gpt-5.5",
+          "tags": [
+            "reasoning",
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        }
+      ]
+    },
+    "custom-wsqoho4fru": {
+      "id": "custom-wsqoho4fru",
+      "name": "ofox.ai",
+      "base_url": "https://api.ofox.ai/",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "z-ai/glm-4.7-flash:free",
+          "name": "Z.ai: GLM-4.7-Flash (Free)",
+          "tags": [
+            "free",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        }
+      ]
+    },
+    "custom-5iqkmoppxq": {
+      "id": "custom-5iqkmoppxq",
+      "name": "春风",
+      "base_url": "https://chunfeng.mentalout.top/v1",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "gpt-5.5",
+          "name": "gpt-5.5",
+          "tags": [
+            "reasoning",
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        },
+        {
+          "id": "gpt-5.4",
+          "name": "gpt-5.4",
+          "tags": [
+            "reasoning",
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        }
+      ]
+    },
+    "custom-wv0cs0jm52": {
+      "id": "custom-wv0cs0jm52",
+      "name": "llmapi.pro",
+      "base_url": "https://llmapi.pro",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "anthropic_messages",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "claude-opus-4-7",
+          "name": "Claude Opus 4.7",
+          "tags": [
+            "reasoning",
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        },
+        {
+          "id": "claude-opus-4-6",
+          "name": "Claude Opus 4.6",
+          "tags": [
+            "reasoning",
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 200000
+        }
+      ]
+    },
+    "custom-q4hh09hpn2": {
+      "id": "custom-q4hh09hpn2",
+      "name": "雷洛",
+      "base_url": "https://llhub.top",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "anthropic_messages",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "claude-opus-4-7-thinking",
+          "name": "claude-opus-4-7-thinking",
+          "tags": [
+            "reasoning",
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 200000
+        }
+      ]
+    },
+    "custom-wcpohmp1jp": {
+      "id": "custom-wcpohmp1jp",
+      "name": "OpenCode",
+      "base_url": "https://opencode.ai/zen/v1",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "big-pickle",
+          "name": "big-pickle",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        },
+        {
+          "id": "deepseek-v4-flash-free",
+          "name": "deepseek-v4-flash-free",
+          "tags": [
+            "free",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 128000
+        },
+        {
+          "id": "mimo-v2.5-free",
+          "name": "mimo-v2.5-free",
+          "tags": [
+            "free",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        }
+      ]
+    },
+    "custom-a8khbs4zld": {
+      "id": "custom-a8khbs4zld",
+      "name": "getrouter",
+      "base_url": "https://api.getrouter.top",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "anthropic_messages",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 CherryStudio/1.0",
+        "HTTP-Referer": "https://cherry-ai.com",
+        "X-Title": "Cherry Studio"
+      },
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "claude-opus-4-7",
+          "name": "Claude Sonnet 4-7",
+          "tags": [
+            "reasoning",
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 200000
+        },
+        {
+          "id": "gpt-5.5",
+          "name": "GPT-5.5",
+          "tags": [
+            "reasoning",
+            "vision",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        }
+      ]
+    },
+    "openrouter": {
+      "id": "openrouter",
+      "name": "OpenRouter",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key": "",
+      "api_key_prefix": "sk-or-v1-",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": true,
+      "enabled": true,
+      "is_aggregator": true,
+      "is_builtin": true,
+      "extra_headers": {},
+      "description": "聚合 300+ 模型，含大量 :free 免费模型（DeepSeek / Llama / Qwen / Gemini Flash 等）。",
+      "icon": "🛣️",
+      "homepage": "https://openrouter.ai",
+      "api_key_url": "https://openrouter.ai/keys",
+      "models": [
+        {
+          "id": "moonshotai/kimi-k2.6:free",
+          "name": "MoonshotAI: Kimi K2.6 (free)",
+          "tags": [
+            "free",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": {
+            "prompt": "0",
+            "completion": "0"
+          },
+          "context_length": 262144
+        },
+        {
+          "id": "cohere/north-mini-code:free",
+          "name": "Cohere: North Mini Code (free)",
+          "tags": [
+            "free",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": {
+            "prompt": "0",
+            "completion": "0"
+          },
+          "context_length": 256000
+        },
+        {
+          "id": "moonshotai/kimi-k3",
+          "name": "MoonshotAI: Kimi K3",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": {
+            "prompt": "0.000003",
+            "completion": "0.000015",
+            "input_cache_read": "0.0000003"
+          },
+          "context_length": 1048576
+        }
+      ]
+    },
+    "custom-3ul0itlu6b": {
+      "id": "custom-3ul0itlu6b",
+      "name": "阶跃星辰",
+      "base_url": "https://api.stepfun.com/step_plan/v1",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": false,
+      "extra_headers": {},
+      "description": "",
+      "icon": "",
+      "homepage": "",
+      "api_key_url": "",
+      "models": [
+        {
+          "id": "step-3.7-flash",
+          "name": "step-3.7-flash",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        }
+      ]
+    },
+    "deepseek": {
+      "id": "deepseek",
+      "name": "DeepSeek",
+      "base_url": "https://api.deepseek.com",
+      "api_key": "",
+      "api_key_prefix": "sk-",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": true,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": true,
+      "extra_headers": {},
+      "description": "国产性价比王：DeepSeek V3 / R1 推理模型。",
+      "icon": "🐋",
+      "homepage": "https://www.deepseek.com",
+      "api_key_url": "https://platform.deepseek.com/api_keys",
+      "models": [
+        {
+          "id": "deepseek-v4-pro",
+          "name": "deepseek-v4-pro",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 128000
+        },
+        {
+          "id": "deepseek-v4-flash",
+          "name": "deepseek-v4-flash",
+          "tags": [
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": 128000
+        }
+      ]
+    },
+    "openai": {
+      "id": "openai",
+      "name": "OpenAI",
+      "base_url": "https://api.openai.com/v1",
+      "api_key": "",
+      "api_key_prefix": "sk-",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": true,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": true,
+      "extra_headers": {},
+      "description": "官方 OpenAI：GPT-4o / GPT-5 / o3 等。",
+      "icon": "🌐",
+      "homepage": "https://openai.com",
+      "api_key_url": "https://platform.openai.com/api-keys",
+      "models": []
+    },
+    "anthropic": {
+      "id": "anthropic",
+      "name": "Anthropic",
+      "base_url": "https://api.anthropic.com",
+      "api_key": "",
+      "api_key_prefix": "sk-ant-",
+      "transport": "anthropic_messages",
+      "require_api_key": false,
+      "freeze_url": true,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": true,
+      "extra_headers": {},
+      "description": "Claude 原生：Sonnet / Opus / Haiku。走 /v1/messages 协议。",
+      "icon": "🅰️",
+      "homepage": "https://www.anthropic.com",
+      "api_key_url": "https://console.anthropic.com/settings/keys",
+      "models": []
+    },
+    "gemini": {
+      "id": "gemini",
+      "name": "Google Gemini",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": true,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": true,
+      "extra_headers": {},
+      "description": "Google Gemini OpenAI 兼容端点：2.5 Pro / Flash / Flash Lite 等。",
+      "icon": "♊",
+      "homepage": "https://ai.google.dev",
+      "api_key_url": "https://aistudio.google.com/apikey",
+      "models": []
+    },
+    "kimi": {
+      "id": "kimi",
+      "name": "Kimi (Moonshot)",
+      "base_url": "https://api.moonshot.cn/v1",
+      "api_key": "",
+      "api_key_prefix": "sk-",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": true,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": true,
+      "extra_headers": {},
+      "description": "月之暗面 Kimi：200K 长上下文。",
+      "icon": "🌙",
+      "homepage": "https://www.moonshot.cn",
+      "api_key_url": "https://platform.moonshot.cn/console/api-keys",
+      "models": []
+    },
+    "zhipu": {
+      "id": "zhipu",
+      "name": "智谱 BigModel",
+      "base_url": "https://open.bigmodel.cn/api/paas/v4",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": true,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": true,
+      "extra_headers": {},
+      "description": "智谱 GLM-4.5 / GLM-4 系列。",
+      "icon": "🧠",
+      "homepage": "https://open.bigmodel.cn",
+      "api_key_url": "https://open.bigmodel.cn/usercenter/apikeys",
+      "models": []
+    },
+    "siliconflow": {
+      "id": "siliconflow",
+      "name": "硅基流动",
+      "base_url": "https://api.siliconflow.cn/v1",
+      "api_key": "",
+      "api_key_prefix": "sk-",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": true,
+      "enabled": true,
+      "is_aggregator": true,
+      "is_builtin": true,
+      "extra_headers": {},
+      "description": "聚合 DeepSeek / Qwen / GLM 等，含免费额度。",
+      "icon": "🌊",
+      "homepage": "https://siliconflow.cn",
+      "api_key_url": "https://cloud.siliconflow.cn/account/ak",
+      "models": [
+        {
+          "id": "BAAI/bge-m3",
+          "name": "BAAI/bge-m3",
+          "tags": [
+            "embedding"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        },
+        {
+          "id": "FunAudioLLM/CosyVoice2-0.5B",
+          "name": "FunAudioLLM/CosyVoice2-0.5B",
+          "tags": [
+            "audio",
+            "function_calling"
+          ],
+          "icon": "",
+          "added_by_user": true,
+          "pricing": null,
+          "context_length": null
+        }
+      ]
+    },
+    "dashscope": {
+      "id": "dashscope",
+      "name": "阿里云百炼（DashScope）",
+      "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "api_key": "",
+      "api_key_prefix": "sk-",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": true,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": true,
+      "extra_headers": {},
+      "description": "通义千问 Qwen / Qwen3 Coder / Qwen-VL 等。",
+      "icon": "🏮",
+      "homepage": "https://bailian.console.aliyun.com",
+      "api_key_url": "https://bailian.console.aliyun.com/?apiKey=1",
+      "models": []
+    },
+    "modelscope": {
+      "id": "modelscope",
+      "name": "ModelScope 魔搭",
+      "base_url": "https://api-inference.modelscope.cn/v1",
+      "api_key": "",
+      "api_key_prefix": "ms-",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": true,
+      "enabled": true,
+      "is_aggregator": true,
+      "is_builtin": true,
+      "extra_headers": {},
+      "description": "阿里魔搭社区推理：大量免费开源模型（Qwen / DeepSeek / GLM / LLaMA）。",
+      "icon": "🎨",
+      "homepage": "https://modelscope.cn",
+      "api_key_url": "https://modelscope.cn/my/myaccesstoken",
+      "models": []
+    },
+    "minimax": {
+      "id": "minimax",
+      "name": "MiniMax",
+      "base_url": "https://api.minimax.chat/v1",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": true,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": true,
+      "extra_headers": {},
+      "description": "MiniMax abab / M-series 文本 + 语音 + 视频。",
+      "icon": "〰️",
+      "homepage": "https://www.minimax.chat",
+      "api_key_url": "https://platform.minimaxi.com/user-center/basic-information/interface-key",
+      "models": []
+    },
+    "ollama": {
+      "id": "ollama",
+      "name": "Ollama（本地）",
+      "base_url": "http://localhost:11434/v1",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": true,
+      "extra_headers": {},
+      "description": "本地部署：ollama pull 后即可用。无需 Key。",
+      "icon": "🦙",
+      "homepage": "https://ollama.com",
+      "api_key_url": "",
+      "models": []
+    },
+    "lmstudio": {
+      "id": "lmstudio",
+      "name": "LM Studio（本地）",
+      "base_url": "http://localhost:1234/v1",
+      "api_key": "",
+      "api_key_prefix": "",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": false,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": true,
+      "extra_headers": {},
+      "description": "LM Studio 本地 OpenAI 兼容服务。无需 Key。",
+      "icon": "🏠",
+      "homepage": "https://lmstudio.ai",
+      "api_key_url": "",
+      "models": []
+    },
+    "groq": {
+      "id": "groq",
+      "name": "Groq",
+      "base_url": "https://api.groq.com/openai/v1",
+      "api_key": "",
+      "api_key_prefix": "gsk_",
+      "transport": "openai_chat",
+      "require_api_key": false,
+      "freeze_url": true,
+      "enabled": true,
+      "is_aggregator": false,
+      "is_builtin": true,
+      "extra_headers": {},
+      "description": "Groq LPU 超低延迟推理：Llama / Mixtral / Whisper-large-v3-turbo 等。",
+      "icon": "⚡",
+      "homepage": "https://groq.com",
+      "api_key_url": "https://console.groq.com/keys",
+      "models": []
+    }
+  },
+  "translate_model": {
+    "provider_id": "custom-3ul0itlu6b",
+    "model": "step-3.7-flash"
+  },
+  "voice_transcription": {
+    "provider_type": "whisper_api",
+    "provider_id": "",
+    "model": "",
+    "local_model_size": "small",
+    "max_duration_seconds": 300,
+    "max_audio_size_mb": 25
+  }
+}

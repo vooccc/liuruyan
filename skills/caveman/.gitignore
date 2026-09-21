@@ -1,0 +1,14 @@
+benchmarks/results/*.json
+__pycache__/
+*.pyc
+.venv/
+.env.local
+**/.DS_Store
+.claude/worktrees/
+evals/snapshots/*.html
+evals/snapshots/*.png
+context/refs/research-brief-caveman-code-efficiency.md
+
+# Build artifacts
+dist/*
+!dist/caveman.skill

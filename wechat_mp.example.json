@@ -1,0 +1,9 @@
+{
+  "_说明": "微信公众号草稿箱集成配置。复制本文件为 wechat_mp.json 填入真实值（wechat_mp.json 已被 gitignore，不会进 git）。也可改用环境变量 WECHAT_APPID / WECHAT_SECRET / WECHAT_DEFAULT_THUMB_MEDIA_ID / WECHAT_DEFAULT_THUMB_PATH，环境变量优先。",
+  "_获取方式": "2025 起开发接口已迁移：登录 https://developers.weixin.qq.com/platform（微信开发者平台，非 mp 后台）→ 微信扫码 → 我的业务 → 公众号 → 基础信息 → 开发密钥，这里拿 AppID/AppSecret，并配 API IP 白名单（否则报 40164）。",
+  "appid": "",
+  "secret": "",
+  "_封面说明": "公众号图文草稿必须有封面。三选一：① 填 default_thumb_media_id（已上传素材的 media_id）；② 填 default_thumb_path（本地图片绝对路径，首次自动上传成永久素材并缓存 media_id）；③ 调接口时显式传 thumb_media_id。",
+  "default_thumb_media_id": "",
+  "default_thumb_path": ""
+}
