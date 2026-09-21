@@ -620,7 +620,7 @@ function DingTalkConfigForm({
               onClick={() => setShowSecret((v) => !v)}
               title={showSecret ? '隐藏' : '显示'}
             >
-              {showSecret ? <EyeOff size={14} /> : <Eye size={14} />}
+              {showSecret ? <Eye size={14} /> : <EyeOff size={14} />}
             </button>
           </div>
         </div>
@@ -1165,7 +1165,7 @@ function MatrixConfigForm({
               onClick={() => setShowToken((v) => !v)}
               title={showToken ? '隐藏' : '显示'}
             >
-              {showToken ? <EyeOff size={14} /> : <Eye size={14} />}
+              {showToken ? <Eye size={14} /> : <EyeOff size={14} />}
             </button>
           </div>
         </div>
@@ -1677,7 +1677,7 @@ function FeishuConfigForm({
               onClick={() => setShowSecret((v) => !v)}
               title={showSecret ? '隐藏' : '显示'}
             >
-              {showSecret ? <EyeOff size={14} /> : <Eye size={14} />}
+              {showSecret ? <Eye size={14} /> : <EyeOff size={14} />}
             </button>
           </div>
         </div>

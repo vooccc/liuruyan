@@ -16,6 +16,8 @@ interface ChatInputComposerProps {
   attachmentsSlot?: ReactNode
   /** 粘贴文件回调（剪贴板里有截图/文件时触发）。与 📎 走同一条 handleChooseFiles。 */
   onPasteFiles?: (files: File[]) => void
+  /** 工作区与 Pin 上下文药丸栏（与输入框紧密对齐） */
+  pinnedBarSlot?: ReactNode
 }
 
 export default function ChatInputComposer({
@@ -31,6 +33,7 @@ export default function ChatInputComposer({
   tasksAnchorSlot,
   attachmentsSlot,
   onPasteFiles,
+  pinnedBarSlot,
 }: ChatInputComposerProps) {
   // 剪贴板里若有 file（截图复制 / 资源管理器复制文件），不打断文本粘贴。
   // 浏览器把图片/文件项放在 clipboardData.items 里 kind='file'；纯文本粘贴不含 file 项。
@@ -56,6 +59,7 @@ export default function ChatInputComposer({
     <div className="input-area">
       {tasksAnchorSlot}
       {commandsPanel}
+      {pinnedBarSlot}
 
       <div className="input-bar-modern">
         {topToolbar}

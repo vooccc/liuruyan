@@ -279,7 +279,7 @@ export default function EmbeddingSettings() {
                 onClick={() => setShowApiKey((v) => !v)}
                 title={showApiKey ? '隐藏' : '显示'}
               >
-                {showApiKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                {showApiKey ? <Eye size={14} /> : <EyeOff size={14} />}
               </button>
             </div>
           </FormField>

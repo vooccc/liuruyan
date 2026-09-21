@@ -688,7 +688,7 @@ function MemoryTab() {
   }, [selected])
 
   const toggleLabel = showPrivate ? '隐藏私密' : '显示私密'
-  const ToggleIcon = showPrivate ? EyeOff : Eye
+  const ToggleIcon = showPrivate ? Eye : EyeOff
 
   if (err) return <div style={{ color: 'var(--accent-red)' }}>{err}</div>
 

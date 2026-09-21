@@ -496,7 +496,7 @@ export default function FastContextPane() {
                     title={showToken ? '隐藏' : '显示'}
                     style={{ flexShrink: 0, height: 36, width: 36 }}
                   >
-                    {showToken ? <EyeOff size={14} /> : <Eye size={14} />}
+                    {showToken ? <Eye size={14} /> : <EyeOff size={14} />}
                   </button>
                 </div>
 

@@ -747,8 +747,6 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
         sessionId={currentSession?.id || null}
       />
 
-      <PinnedBar sessionId={currentSession?.id || null} refreshKey={pinnedRefreshKey} />
-
       {mention.state.open && (
         <MentionDropdown
           query={mention.state.query}
@@ -758,8 +756,15 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
         />
       )}
 
-        <ChatInputComposer
-          commandsPanel={showCommands ? (
+      <ChatInputComposer
+        pinnedBarSlot={(
+          <PinnedBar
+            sessionId={currentSession?.id || null}
+            refreshKey={pinnedRefreshKey}
+            isBusy={isLoading}
+          />
+        )}
+        commandsPanel={showCommands ? (
             <ChatCommandsPanel
               commands={CHAT_SLASH_COMMANDS}
               onClose={() => setShowCommands(false)}

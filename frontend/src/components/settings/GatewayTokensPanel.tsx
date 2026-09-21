@@ -563,7 +563,7 @@ function TokenRow({
                 title={revealed ? '隐藏' : '显示完整密钥'}
                 aria-label={revealed ? '隐藏密钥' : '显示完整密钥'}
               >
-                {revealed ? <EyeOff size={12} /> : <Eye size={12} />}
+                {revealed ? <Eye size={12} /> : <EyeOff size={12} />}
               </button>
               <button
                 type="button"

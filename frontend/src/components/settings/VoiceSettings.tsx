@@ -533,7 +533,7 @@ function SearchEnginePane() {
                     title={reveals[engKey] ? '隐藏' : '显示'}
                     style={{ flexShrink: 0 }}
                   >
-                    {reveals[engKey] ? <EyeOff size={15} /> : <Eye size={15} />}
+                    {reveals[engKey] ? <Eye size={15} /> : <EyeOff size={15} />}
                   </button>
 
                   {isDevin && localDevin?.installed && (

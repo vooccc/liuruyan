@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type Ref, type RefObject } from 'react'
-import { ChevronDown, ShieldCheck, Square, Trash2, Wrench } from 'lucide-react'
+import { ChevronDown, ShieldCheck, Square, Trash2 } from 'lucide-react'
 import type { Model } from '../api/chat'
 import ChatModelPicker from './ChatModelPicker'
 import MicSpeechButton, { type MicSpeechButtonRef } from './MicSpeechButton'
@@ -148,11 +148,6 @@ export default function ChatInputBottomToolbar({
       >
         <ShieldCheck size={14} />
         <span>权限</span>
-      </button>
-
-      <button type="button" className="toolbar-action-btn" title={CHAT_UI_TEXT.skillsTitle}>
-        <Wrench size={14} />
-        <span>{CHAT_UI_TEXT.skillsLabel}</span>
       </button>
 
       <button type="button" className="toolbar-action-btn danger-btn" onClick={onClearHistory} title={CHAT_UI_TEXT.clearTitle}>

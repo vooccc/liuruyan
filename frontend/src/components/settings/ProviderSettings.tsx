@@ -1218,7 +1218,7 @@ function ProviderDetail({
                   title={keyVisible ? '隐藏' : '显示'}
                   aria-label={keyVisible ? '隐藏 API Key' : '显示 API Key'}
                 >
-                  {keyVisible ? <EyeOff size={14} /> : <Eye size={14} />}
+                  {keyVisible ? <Eye size={14} /> : <EyeOff size={14} />}
                 </button>
                 <button
                   type="button"

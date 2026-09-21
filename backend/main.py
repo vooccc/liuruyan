@@ -2980,6 +2980,32 @@ async def open_agent_folder(agent_id: str):
         return {"success": False, "error": str(e)}
 
 
+@app.post("/workspace/open-folder")
+async def open_workspace_folder(body: dict):
+    """在文件管理器中打开指定工作目录"""
+    import subprocess
+    target_path = body.get("path") if isinstance(body, dict) else None
+    if not target_path:
+        try:
+            from .lry_workspace import resolve_workspace_root
+            root = resolve_workspace_root()
+            target_path = str(root) if root else None
+        except Exception:
+            target_path = None
+    if not target_path or not os.path.exists(target_path):
+        return {"success": False, "error": f"目录不存在: {target_path}"}
+    try:
+        if sys.platform == "win32":
+            subprocess.Popen(["explorer", str(target_path)])
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(target_path)])
+        else:
+            subprocess.Popen(["xdg-open", str(target_path)])
+        return {"success": True, "path": str(target_path)}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @app.get("/health")
 async def health_check():
     """健康检查（v1 兼容路径，保留不动）"""

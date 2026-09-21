@@ -187,6 +187,16 @@ input, textarea,
   -webkit-user-select: text;
 }
 
+/* 禁用 Windows WebView2 / Edge 原生密码框自带的眼睛与清除按钮（避免与自定义眼睛按钮并存出现两个眼睛） */
+input::-ms-reveal,
+input::-ms-clear,
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
 /* 群聊消息：放开文字选择，方便复制每个角色的发言、思考链路 */
 .collab-bubble-body,
 .collab-bubble-body *,
@@ -4646,14 +4656,10 @@ input, textarea,
   margin-left: auto;
   margin-right: auto;
 }
-/* Pin context 浮条不在 .input-area 里（样式在 PinnedBar.tsx 内嵌 <style>）。
-   组件自带 14px 内衬而输入框的 14px 来自 .input-area padding——参照系不同，
-   上限补 28px 差值后两者在任何窗口宽度下同缘。 */
+/* PinnedBar（工作区与 Pin 胶囊栏）已挂载至 .input-area 作为直接子元素，
+   与 .input-bar-modern 拥有相同的宽度规约与左右边缘，实现像素级自然对齐。 */
 .pinned-bar {
   width: 100%;
-  max-width: calc(var(--read-max) + var(--composer-outdent) * 2 + 28px);
-  margin-left: auto;
-  margin-right: auto;
   box-sizing: border-box;
 }
 
@@ -7523,21 +7529,41 @@ input, textarea,
   transform: translate(1.5px, -1.5px);
 }
 
-/* 停止按钮 */
-.send-button-modern.stop-button {
-  background: color-mix(in srgb, var(--accent-red) 92%, #1f2937 8%);
-  color: #fff;
-  border-color: color-mix(in srgb, var(--accent-red) 36%, transparent);
-  box-shadow: 0 6px 14px color-mix(in srgb, var(--accent-red) 20%, transparent);
+/* 停止按钮：完全静止稳定，色调克制温和，悬停平滑微调不刺眼不艳丽 */
+.send-button-modern.stop-button,
+.send-button-modern.stop-button:hover,
+.send-button-modern.stop-button:hover:not(:disabled),
+.send-button-modern.stop-button:active,
+.send-button-modern.stop-button:active:not(:disabled) {
+  transform: none !important;
+  transition: background 0.18s ease, border-color 0.18s ease, filter 0.18s ease, opacity 0.18s ease;
 }
-.send-button-modern.stop-button:hover {
-  background: #e04540;
-  border-color: color-mix(in srgb, var(--accent-red) 50%, transparent);
-  box-shadow: 0 8px 18px color-mix(in srgb, var(--accent-red) 24%, transparent);
+.send-button-modern.stop-button {
+  background: color-mix(in srgb, var(--accent-red) 88%, #1f2937 12%);
+  color: #fff;
+  border-color: color-mix(in srgb, var(--accent-red) 30%, transparent);
+  box-shadow: 0 4px 12px rgba(160, 48, 40, 0.2);
+}
+.send-button-modern.stop-button:hover:not(:disabled) {
+  /* 悬停微调，色调保持沉稳深红，杜绝艳红反差 */
+  background: color-mix(in srgb, var(--accent-red) 91%, #111827 9%);
+  border-color: color-mix(in srgb, var(--accent-red) 42%, transparent);
+  filter: brightness(0.96);
+  box-shadow: 0 4px 12px rgba(160, 48, 40, 0.26);
+}
+.send-button-modern.stop-button:active:not(:disabled) {
+  filter: brightness(0.9);
+  opacity: 0.92;
 }
 [data-theme="light"] .send-button-modern.stop-button:not(:disabled),
 [data-theme="dark"] .send-button-modern.stop-button:not(:disabled) {
-  background: color-mix(in srgb, var(--accent-red) 92%, #1f2937 8%);
+  background: color-mix(in srgb, var(--accent-red) 88%, #1f2937 12%);
+  color: #fff;
+}
+[data-theme="light"] .send-button-modern.stop-button:hover:not(:disabled),
+[data-theme="dark"] .send-button-modern.stop-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-red) 91%, #111827 9%);
+  filter: brightness(0.96);
   color: #fff;
 }
 
@@ -19447,6 +19473,12 @@ body.lr-resizing .sidebar { transition: none !important; }
   font-size: 13px;
   font-family: inherit;
   outline: none;
+}
+.settings-conn-input input::-ms-reveal,
+.settings-conn-input input::-ms-clear {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 .settings-conn-input input:disabled {
   cursor: not-allowed;
