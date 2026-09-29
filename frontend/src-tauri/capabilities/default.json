@@ -1,0 +1,45 @@
+{
+  "identifier": "default",
+  "description": "Default capability for the main window",
+  "windows": ["main", "character-workshop-*", "memory-browser"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-minimize",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close",
+    "core:window:allow-destroy",
+    "core:window:allow-is-maximized",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-set-focus",
+    "core:webview:allow-create-webview-window",
+    "dialog:default",
+    "dialog:allow-save",
+    "fs:default",
+    "fs:allow-write-file",
+    {
+      "identifier": "fs:scope",
+      "allow": [
+        { "path": "**" }
+      ]
+    },
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "binaries/liuruyan-backend",
+          "sidecar": true,
+          "args": [
+            "--host",
+            { "validator": "\\S+" },
+            "--port",
+            { "validator": "\\d+" }
+          ]
+        }
+      ]
+    }
+  ]
+}

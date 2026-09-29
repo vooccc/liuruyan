@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.spec.ts", "src/**/*.spec.tsx"]
+}
+// 注：曾经的 "references": [{ "path": "./tsconfig.node.json" }] 已删除。
+// 那条引用让 tsc 把 vite.config.ts 编译成 vite.config.js（composite 强制 emit），
+// 然后 vite build 优先加载 .js → 修 .ts 永远不生效（实际踩过：M8a 远程访问诊断
+// 时调了好几轮 vite.config.ts 都看不到变化，最后才发现 vite 用的根本不是它）。
+// vite 5+ 内建 esbuild 加载 .ts config，不需要外部 tsc 编译，所以这条 reference
+// 是 vite + react 模板的过时残留——删掉后 vite.config.ts 是单一真相，不会再分叉。
