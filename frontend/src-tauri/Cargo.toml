@@ -1,6 +1,6 @@
 [package]
 name = "liuruyan-agent"
-version = "2.0.19"
+version = "2.0.17"
 description = "柳如烟智能体"
 authors = ["you"]
 edition = "2021"

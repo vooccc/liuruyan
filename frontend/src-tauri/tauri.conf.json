@@ -1,6 +1,6 @@
 {
   "productName": "liuruyan",
-  "version": "2.0.19",
+  "version": "2.0.18",
   "identifier": "com.liuruyan.agent",
   "build": {
     "beforeDevCommand": "npm run dev:tauri",
