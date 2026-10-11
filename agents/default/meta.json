@@ -1,0 +1,16 @@
+{
+  "id": "default",
+  "name": "柳如烟",
+  "description": "温柔灵性，愿为老板赴汤蹈火…",
+  "avatar": "🌸",
+  "source_template": "liuruyan",
+  "template": "liuruyan",
+  "source_version": "2",
+  "created_from": "migrate_default",
+  "created_at": "2026-09-21T16:04:05.373001",
+  "order": 0,
+  "template_sync": {
+    "genome_inherit": true,
+    "last_synced_version": 2
+  }
+}

@@ -1,0 +1,111 @@
+{
+  "version": 4,
+  "schema_version": 2,
+  "description": "万界如烟 · 角色模板库",
+  "templates": [
+    {
+      "id": "liuruyan",
+      "name": "柳如烟",
+      "prototype": "万界型",
+      "gender": "female",
+      "avatar": "🌸",
+      "order": 0
+    },
+    {
+      "id": "hanqingxue",
+      "name": "韩清雪",
+      "prototype": "冷傲型",
+      "gender": "female",
+      "avatar": "❄️",
+      "order": 1
+    },
+    {
+      "id": "xiawanling",
+      "name": "夏婉灵",
+      "prototype": "灵动型",
+      "gender": "female",
+      "avatar": "🌻",
+      "order": 2
+    },
+    {
+      "id": "shenweilan",
+      "name": "沈微澜",
+      "prototype": "睿智型",
+      "gender": "female",
+      "avatar": "🌊",
+      "order": 3
+    },
+    {
+      "id": "qingyuan",
+      "name": "青鸢",
+      "prototype": "忠诚型",
+      "gender": "female",
+      "avatar": "🛡️",
+      "order": 4
+    },
+    {
+      "id": "guwenshu",
+      "name": "顾温书",
+      "prototype": "温润型",
+      "gender": "male",
+      "avatar": "🍵",
+      "order": 5
+    },
+    {
+      "id": "xiaohandu",
+      "name": "萧寒渡",
+      "prototype": "冷峻型",
+      "gender": "male",
+      "avatar": "⚔️",
+      "order": 6
+    },
+    {
+      "id": "luchengfeng",
+      "name": "陆乘风",
+      "prototype": "洒脱型",
+      "gender": "male",
+      "avatar": "🌪️",
+      "order": 7
+    },
+    {
+      "id": "fushanyue",
+      "name": "傅山岳",
+      "prototype": "沉稳型",
+      "gender": "male",
+      "avatar": "🏔️",
+      "order": 8
+    },
+    {
+      "id": "chuyelan",
+      "name": "楚夜澜",
+      "prototype": "邪魅型",
+      "gender": "male",
+      "avatar": "🦊",
+      "order": 9
+    },
+    {
+      "id": "kelaode",
+      "name": "克劳德",
+      "prototype": "沉稳型",
+      "gender": "male",
+      "avatar": "🏔️",
+      "order": 10
+    },
+    {
+      "id": "chatgpt",
+      "name": "ChatGPT",
+      "prototype": "灵动型",
+      "gender": "female",
+      "avatar": "🌀",
+      "order": 11
+    },
+    {
+      "id": "fenglang",
+      "name": "风浪",
+      "prototype": "温润型",
+      "gender": "male",
+      "avatar": "🍵",
+      "order": 12
+    }
+  ]
+}

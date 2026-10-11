@@ -1,0 +1,74 @@
+aiohappyeyeballs==2.6.1
+aiohttp==3.13.5
+aiosignal==1.4.0
+altgraph==0.17.5
+annotated-doc==0.0.4
+annotated-types==0.7.0
+anthropic==0.94.0
+anyio==4.13.0
+attrs==26.1.0
+certifi==2026.2.25
+click==8.3.2
+colorama==0.4.6
+ddgs>=9.0  # web_search 免费兜底后端（Tavily/Exa/Firecrawl 都不可用时使用）
+distro==1.9.0
+docstring_parser==0.17.0
+fastapi==0.135.3
+frozenlist==1.8.0
+h11==0.16.0
+httpcore==1.0.9
+httpx==0.28.1
+idna==3.11
+jedi==0.19.2
+jiter==0.14.0
+mcp>=1.0.0  # MCP (Model Context Protocol) Python SDK：MCP 子系统客户端/服务端基础
+agent-client-protocol>=0.1.0  # ACP (Agent Client Protocol) SDK：外部智能体代理与协作协议
+multidict==6.7.1
+nbformat==5.10.4
+numpy>=1.26,<3.0  # embedding 长期记忆向量索引（@d:\AI_Project\柳如烟\backend\embedding_index.py）；纯 numpy 实现余弦相似度，N<10K 时 <5ms，不引 chromadb/faiss 重依赖
+openai==2.31.0
+packaging==26.1
+parso==0.8.6
+pefile==2023.2.7
+propcache==0.4.1
+pydantic==2.13.0
+pydantic_core==2.46.0
+pyinstaller==6.11.1
+pyinstaller-hooks-contrib==2026.4
+python-dotenv==1.2.2
+python-multipart==0.0.26
+pywin32-ctypes==0.2.3
+PyYAML==6.0.3
+requests>=2.31.0
+pypdf>=5.0,<6.0  # read_file PDF 支持（2026-05-12 P3 方案）：Anthropic 路径用 base64 document block，其他 provider 走 pypdf 兜底
+pdfplumber>=0.11,<0.12  # PDF 表格 / 复杂版式提取升级（2026-05-12 Q2）：read_file 可选 extractor="pdfplumber" 走高质量提取
+python-docx>=1.0,<2.0  # read_file .docx 支持（2026-05-12 Q3）：提取文本内容 + 表格
+python-pptx>=1.0,<2.0  # read_file .pptx 支持（2026-05-12 Q3）：提取幻灯片文本内容 + 表格
+openpyxl>=3.1,<4.0  # read_file .xlsx 支持（2026-05-12 Q4）：每个 sheet 转 markdown 表格
+trafilatura>=2.0  # studio 资料收集/对标正文提取（@backend/studio/routes.py::_extract_article）：开源正文提取准确率第一，纯 Python 直出 markdown，替代脆弱的正则抓取；软依赖，未装/抓不到自动退回正则
+
+# Computer Use（M1+，跨平台屏幕/键鼠控制）
+# 协议契约对齐 anthropic computer_20250124（公开规范），实现自研
+Pillow>=10.0  # 图像处理：截屏后缩放/JPEG 编码/diff
+mss>=9.0,<10  # 跨平台快速截屏（MIT，用 ctypes 直调系统 API，比 PIL.ImageGrab 快 5x）
+pyautogui>=0.9.54  # 跨平台键鼠控制（BSD-3-Clause）
+pyperclip>=1.8.2  # 跨平台剪贴板（BSD-3-Clause），中文/IME 走粘贴模式必需
+screeninfo>=0.8.1  # 多屏枚举
+# Windows-only（Linux/macOS 安装会跳过）：
+pywin32>=306; sys_platform == "win32"  # 应用枚举 / 前台窗口检测
+sniffio==1.3.1
+starlette==1.0.0
+tqdm==4.67.3
+typing-inspection==0.4.2
+typing_extensions==4.15.0
+uvicorn==0.44.0
+yarl==1.23.0
+dingtalk-stream>=0.24.0  # 钉钉 Stream Mode IM 长连接接入
+
+# optional: 本地 whisper 语音转写（不装也能跑——voice_transcription/engine.py 会兜底；
+# 用户只用 whisper_api 模式时这两个都不需要，只在切换到 local_whisper 时按需 pip install）
+# faster-whisper>=1.0.3  # 解开注释即可启用本地转写；还需要系统级 ffmpeg
+
+# dev: 仅用于 backend/tests_core/ 单元测试，不影响 prod 打包（PyInstaller spec 不收入）
+pytest>=8.0
+pytest-asyncio>=0.23
