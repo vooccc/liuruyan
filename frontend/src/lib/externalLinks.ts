@@ -19,13 +19,18 @@ function isExternalHref(href: string | null | undefined): boolean {
   return /^(https?:|mailto:|tel:)/i.test(href.trim())
 }
 
-async function openExternal(url: string): Promise<void> {
+export async function openExternal(url: string): Promise<void> {
   try {
     const runtime = await getRuntime()
     await runtime.shell.openExternal(url)
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error('[externalLinks] openExternal failed', err)
+    try {
+      window.open(url, '_blank', 'noopener,noreferrer')
+    } catch {
+      window.location.href = url
+    }
   }
 }
 

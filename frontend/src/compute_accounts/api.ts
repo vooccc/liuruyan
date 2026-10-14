@@ -112,6 +112,19 @@ export async function listChannelModels(providerId: string): Promise<ModelCatalo
   return data.models || []
 }
 
+export async function syncChannelModels(
+  providerId: string
+): Promise<{ ok: boolean; count: number; models: ModelCatalogItem[]; message?: string }> {
+  const res = await fetch(`${PREFIX}/${providerId}/sync-models`, {
+    method: 'POST',
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(err.detail || `同步模型失败 (${res.status})`)
+  }
+  return res.json()
+}
+
 export async function getEnabledModels(providerId: string): Promise<string[] | null> {
   const res = await fetch(`${PREFIX}/${providerId}/enabled-models`)
   if (!res.ok) {

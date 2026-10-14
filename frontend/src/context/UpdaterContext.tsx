@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useMemo } from 'react'
 import { useAutoUpdater, type UpdateInfo } from '../hooks/useAutoUpdater'
+import { openExternal } from '../lib/externalLinks'
 
 interface UpdaterContextType {
   checking: boolean
@@ -66,7 +67,7 @@ export function UpdaterProvider({ children }: { children: React.ReactNode }) {
 
   const startUpdate = useCallback(async () => {
     if (isSimulated) {
-      window.open('https://github.com/vooccc/liuruyan/releases', '_blank')
+      await openExternal('https://github.com/vooccc/liuruyan/releases')
       return
     }
     return realUpdater.startUpdate()
@@ -74,7 +75,7 @@ export function UpdaterProvider({ children }: { children: React.ReactNode }) {
 
   const openManualDownload = useCallback(async () => {
     if (isSimulated) {
-      window.open('https://github.com/vooccc/liuruyan/releases', '_blank')
+      await openExternal('https://github.com/vooccc/liuruyan/releases')
       return
     }
     return realUpdater.openManualDownload()

@@ -47,6 +47,7 @@ class ComputeAccountsManager:
             "codex": 0,
         }
         self._enabled_models: Dict[str, Optional[List[str]]] = {}
+        self._synced_models: Dict[str, List[Dict[str, Any]]] = {}
         self._load()
 
     @classmethod
@@ -80,6 +81,12 @@ class ComputeAccountsManager:
                                     k: list(v) if isinstance(v, list) else None
                                     for k, v in enabled_map.items()
                                 }
+                            synced_map = data.get("synced_models")
+                            if isinstance(synced_map, dict):
+                                self._synced_models = {
+                                    k: list(v) if isinstance(v, list) else []
+                                    for k, v in synced_map.items()
+                                }
                             loaded = True
                             if has_accs:
                                 break
@@ -87,17 +94,19 @@ class ComputeAccountsManager:
                 logger.debug("[ComputeAccounts] 尝试从 %s 加载失败: %s", p, e)
 
         logger.info(
-            "[ComputeAccounts] 已从磁盘加载账号: Google=%s, Grok=%s, Codex=%s, 配置模型=%s",
+            "[ComputeAccounts] 已从磁盘加载账号: Google=%s, Grok=%s, Codex=%s, 配置模型=%s, 同步模型=%s",
             len(self._accounts.get("google", [])),
             len(self._accounts.get("grok", [])),
             len(self._accounts.get("codex", [])),
             list(self._enabled_models.keys()),
+            {k: len(v) for k, v in self._synced_models.items()},
         )
 
     def _save(self) -> None:
         """持久化保存至磁盘"""
         payload = dict(self._accounts)
         payload["enabled_models"] = self._enabled_models
+        payload["synced_models"] = self._synced_models
         for target_path in [ACCOUNTS_STORE_FILE, Path("memory") / "compute_accounts.json"]:
             try:
                 target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -118,6 +127,24 @@ class ComputeAccountsManager:
             self._enabled_models[provider_id] = list(models)
         self._save()
 
+    def get_synced_models(self, provider_id: str) -> Optional[List[Dict[str, Any]]]:
+        """获取已从云端同步的模型列表"""
+        return self._synced_models.get(provider_id)
+
+    def set_synced_models(self, provider_id: str, models: List[Dict[str, Any]]) -> None:
+        """保存已同步的云端模型列表并持久化"""
+        self._synced_models[provider_id] = list(models)
+        self._save()
+
+    def get_active_models(self, provider_id: str) -> List[Dict[str, Any]]:
+        """获取当前生效的模型清单（优先使用同步的云端 Recommended 列表，兜底用本地静态清单）"""
+        synced = self._synced_models.get(provider_id)
+        if synced and len(synced) > 0:
+            return synced
+        if provider_id == "google":
+            return ANTIGRAVITY_43_MODELS
+        return []
+
     def get_adapter(self, provider_id: str) -> Optional[BaseAccountAdapter]:
         return self._adapters.get(provider_id)
 
@@ -126,7 +153,8 @@ class ComputeAccountsManager:
         self._load()
         google_adapter = self.get_adapter("google")
         google_accounts = self._accounts.get("google", [])
-        google_model_count = len(ANTIGRAVITY_43_MODELS) if google_adapter else 0
+        active_google_models = self.get_active_models("google")
+        google_model_count = len(active_google_models) if google_adapter else 0
 
         grok_accounts = self._accounts.get("grok", [])
         codex_accounts = self._accounts.get("codex", [])

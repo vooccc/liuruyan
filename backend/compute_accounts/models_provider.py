@@ -18,8 +18,9 @@ def get_pro_providers() -> List[Dict[str, Any]]:
 
     if google_accounts:
         enabled_models = mgr.get_enabled_models("google")
+        active_models = mgr.get_active_models("google")
         model_entries = []
-        for m in ANTIGRAVITY_43_MODELS:
+        for m in active_models:
             # 若用户在插件配置中自定义了展示模型，则严格只展示所选模型
             if enabled_models is not None and m["id"] not in enabled_models:
                 continue

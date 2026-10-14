@@ -1,5 +1,6 @@
 import { RefreshCw, Download, ExternalLink, CheckCircle2, AlertCircle, Eye } from 'lucide-react'
 import { useUpdaterContext } from '../../context/UpdaterContext'
+import { openExternal } from '../../lib/externalLinks'
 
 export default function UpdateSettings() {
   const {
@@ -254,7 +255,7 @@ export default function UpdateSettings() {
             <button
               type="button"
               className="update-btn-secondary"
-              onClick={() => window.open(updateInfo.htmlUrl || 'https://github.com/vooccc/liuruyan/releases', '_blank')}
+              onClick={() => openExternal(updateInfo.htmlUrl || 'https://github.com/vooccc/liuruyan/releases')}
             >
               查看 GitHub Release 说明
             </button>

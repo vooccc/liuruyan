@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { API_BASE } from '../api/base'
+import { openExternal } from '../lib/externalLinks'
 
 export interface UpdateInfo {
   version: string
@@ -152,9 +153,7 @@ export function useAutoUpdater() {
       updateInfo?.downloadUrl || updateInfo?.htmlUrl || 'https://github.com/vooccc/liuruyan/releases/latest'
     try {
       setDownloading(true)
-      window.open(targetUrl, '_blank')
-    } catch {
-      window.location.href = targetUrl
+      await openExternal(targetUrl)
     } finally {
       setTimeout(() => setDownloading(false), 2000)
     }
@@ -163,7 +162,7 @@ export function useAutoUpdater() {
   // 手动前往 Releases 页面
   const openManualDownload = useCallback(async () => {
     const url = 'https://github.com/vooccc/liuruyan/releases'
-    window.open(url, '_blank')
+    await openExternal(url)
   }, [])
 
   // 挂载后延迟 3 秒静默执行一次自动检测，之后每 2 小时后台自动静默复检

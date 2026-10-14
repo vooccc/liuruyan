@@ -395,8 +395,110 @@ class GoogleAntigravityAdapter(BaseAccountAdapter):
     _quota_cache: Dict[str, Dict[str, Any]] = {}
 
     async def list_models(self, access_token: Optional[str] = None) -> List[Dict[str, Any]]:
-        """返回 Antigravity 支持的原生思考分级模型列表（14 款）"""
+        """返回 Antigravity 支持的原生思考分级模型列表（默认静态保底）"""
         return ANTIGRAVITY_MODELS
+
+    async def fetch_recommended_models(
+        self,
+        access_token: str,
+        project_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """从 Google 官方 v1internal:fetchAvailableModels 动态拉取 Recommended 模型列表。
+
+        严格与 Antigravity 官方 IDE 保持一致：
+        1. 优先提取 agentModelSorts 中标记为 Recommended 的模型分组；
+        2. 结合 models 元数据，提取 displayName、maxTokens、supportedMimeTypes 等属性；
+        3. 若网络或上游异常，平滑降级回本地预置 ANTIGRAVITY_MODELS。
+        """
+        if not access_token:
+            return ANTIGRAVITY_MODELS
+
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+            "User-Agent": "antigravity/2.9.1 windows/amd64",
+        }
+        body = {"project": project_id or "aicode-consumers"}
+        proxy = _detect_antigravity_proxy()
+
+        endpoints = [
+            "https://cloudcode-pa.googleapis.com",
+            "https://daily-cloudcode-pa.googleapis.com",
+        ]
+
+        raw_data = None
+        async with httpx.AsyncClient(timeout=15.0, proxy=proxy, trust_env=True) as client:
+            for ep in endpoints:
+                try:
+                    resp = await client.post(
+                        f"{ep}/v1internal:fetchAvailableModels",
+                        headers=headers,
+                        json=body,
+                    )
+                    if resp.status_code == 200:
+                        raw_data = resp.json()
+                        break
+                    else:
+                        logger.warning("[GoogleAntigravity] %s 拉取模型失败: %s", ep, resp.status_code)
+                except Exception as e:
+                    logger.debug("[GoogleAntigravity] 端点 %s 拉取模型异常: %s", ep, e)
+
+        if not raw_data or not isinstance(raw_data, dict):
+            logger.info("[GoogleAntigravity] 未能拉取到云端模型，降级为默认预置模型列表")
+            return ANTIGRAVITY_MODELS
+
+        agent_sorts = raw_data.get("agentModelSorts", [])
+        recommended_ids: List[str] = []
+
+        # 1. 查找 Recommended 组
+        for sort_item in agent_sorts:
+            if str(sort_item.get("displayName", "")).strip().lower() == "recommended":
+                for grp in sort_item.get("groups", []):
+                    for mid in grp.get("modelIds", []):
+                        if mid and mid not in recommended_ids:
+                            recommended_ids.append(mid)
+
+        # 2. 兜底：若没有明确 Recommended 标签，取第一组
+        if not recommended_ids and agent_sorts:
+            for grp in agent_sorts[0].get("groups", []):
+                for mid in grp.get("modelIds", []):
+                    if mid and mid not in recommended_ids:
+                        recommended_ids.append(mid)
+
+        if not recommended_ids:
+            return ANTIGRAVITY_MODELS
+
+        models_dict = raw_data.get("models", {})
+        parsed_models: List[Dict[str, Any]] = []
+
+        for mid in recommended_ids:
+            meta = models_dict.get(mid, {}) if isinstance(models_dict, dict) else {}
+            display_name = meta.get("displayName")
+            if not display_name:
+                display_name = mid.replace("-", " ").title()
+                display_name = display_name.replace("Gpt", "GPT").replace("Oss", "OSS")
+
+            max_tokens = meta.get("maxTokens") or 1048576
+            supported_mimes = meta.get("supportedMimeTypes", {})
+            has_vision = any(
+                "image" in mime or "video" in mime for mime in supported_mimes
+            ) if supported_mimes else True
+
+            parsed_models.append({
+                "id": mid,
+                "name": display_name,
+                "context_window": int(max_tokens),
+                "vision": has_vision,
+                "tools": True,
+                "recommended": True,
+            })
+
+        logger.info(
+            "[GoogleAntigravity] 成功从云端动态同步 %d 款 Recommended 模型: %s",
+            len(parsed_models),
+            [m["id"] for m in parsed_models],
+        )
+        return parsed_models
 
     async def test_connection(self, access_token: str) -> Dict[str, Any]:
         """测试 Token 连通性并测量网络往返延迟 (ms)"""
@@ -803,7 +905,7 @@ class GoogleAntigravityAdapter(BaseAccountAdapter):
             target_model = "gemini-3.7-flash-medium"
         elif target_model in ("gemini-3.6-flash", "gemini-3.6-flash-default"):
             target_model = "gemini-3.6-flash-medium"
-        elif target_model in ("gemini-3.1-pro", "gemini-3.1-pro-default", "gemini-3.1-pro-high"):
+        elif target_model in ("gemini-pro-agent", "gemini-3.1-pro", "gemini-3.1-pro-default", "gemini-3.1-pro-high"):
             # 目前 Google daily 端点上 Gemini 3.1 Pro 稳定开放 low 档位，high 档位上游易报 400，自动平滑兼容
             target_model = "gemini-3.1-pro-low"
         elif target_model in ("claude-opus-4-6", "claude-4-6-opus"):
@@ -812,6 +914,8 @@ class GoogleAntigravityAdapter(BaseAccountAdapter):
             target_model = "gpt-oss-120b-medium"
         elif "3-7-sonnet" in target_model.lower() or "3-5-sonnet" in target_model.lower() or "claude-sonnet" in target_model.lower():
             target_model = "claude-sonnet-4-6"
+        elif "argon" in target_model.lower() and not any(k in target_model.lower() for k in ("high", "medium", "low")):
+            target_model = f"{target_model}-high"
 
         # 动态获取账号关联的真实 Google Cloud Companion 项目 ID
         if not project_id:

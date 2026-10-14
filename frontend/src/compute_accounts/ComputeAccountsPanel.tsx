@@ -39,6 +39,7 @@ import {
   manualExchangeToken,
   setEnabledModels,
   setPrimaryAccount,
+  syncChannelModels,
   testConnection,
   toggleAccount,
 } from './api'
@@ -125,6 +126,9 @@ interface AccountMasterCardItemProps {
   handleSelectNone: () => void
   filteredGoogleModels: ModelCatalogItem[]
   toggleModel: (modelId: string) => void
+  syncingModels: boolean
+  handleSyncRecommendedModels: () => Promise<void>
+  syncToast: string | null
 }
 
 function AccountMasterCardItem({
@@ -153,6 +157,9 @@ function AccountMasterCardItem({
   handleSelectNone,
   filteredGoogleModels,
   toggleModel,
+  syncingModels,
+  handleSyncRecommendedModels,
+  syncToast,
 }: AccountMasterCardItemProps) {
   const isPrimary = accIdx === 0
   const isCooling = acc.status === 'cooling'
@@ -336,13 +343,13 @@ function AccountMasterCardItem({
               {modelsLoading && (
                 <Loader2 size={11} className="animate-spin" style={{ color: 'var(--primary-color)' }} />
               )}
-              {saveStatus && (
-                <span className="ca-save-pill"><Check size={11} /> {saveStatus}</span>
+              {(syncToast || saveStatus) && (
+                <span className="ca-save-pill"><Check size={11} /> {syncToast || saveStatus}</span>
               )}
             </div>
 
             <div className="ca-card-models-toggle-btn">
-              <span>{expandedCardModels[acc.id] ? '收起配置' : '展开微调 14 款官方模型'}</span>
+              <span>{expandedCardModels[acc.id] ? '收起配置' : `展开微调 ${googleModels.length || 14} 款官方模型`}</span>
               <ChevronDown
                 size={14}
                 className={`ca-chevron-icon ${expandedCardModels[acc.id] ? 'expanded' : ''}`}
@@ -355,7 +362,7 @@ function AccountMasterCardItem({
             <div
               className="ca-models-chip-preview"
               onClick={() => toggleCardModelsExpanded(acc.id)}
-              title="点击展开完整 14 款模型与思考分级微调"
+              title="点击展开完整模型与思考分级微调"
             >
               <span className="ca-model-chip">Gemini 3.8 Flash High</span>
               <span className="ca-model-chip">3.8 Flash Med</span>
@@ -366,7 +373,7 @@ function AccountMasterCardItem({
             </div>
           )}
 
-          {/* 展开态：完整 14 款官方核心思考分级模型目录与控制 */}
+          {/* 展开态：完整官方核心思考分级模型目录与控制 */}
           {expandedCardModels[acc.id] && (
             <div className="ca-models-expanded-content">
               <div className="ca-model-controls-bar">
@@ -390,6 +397,16 @@ function AccountMasterCardItem({
                   )}
                 </div>
                 <div className="ca-quick-filter-group">
+                  <button
+                    type="button"
+                    onClick={handleSyncRecommendedModels}
+                    disabled={syncingModels}
+                    className="ca-btn ca-btn-primary ca-btn-xs"
+                    title="从 Google Cloud Code 官方实时拉取最新 Recommended 推荐模型列表"
+                  >
+                    <RefreshCw size={11} className={syncingModels ? 'animate-spin' : ''} />
+                    {syncingModels ? '正在同步云端...' : '🔄 同步最新模型'}
+                  </button>
                   <button
                     type="button"
                     onClick={handleSelectRecommendedOnly}
@@ -811,6 +828,29 @@ export function ComputeAccountsPanel() {
     }
   }
 
+  const [syncingModels, setSyncingModels] = useState(false)
+  const [syncToast, setSyncToast] = useState<string | null>(null)
+
+  const handleSyncRecommendedModels = async () => {
+    setSyncingModels(true)
+    setSyncToast(null)
+    try {
+      const res = await syncChannelModels('google')
+      if (res.ok && Array.isArray(res.models)) {
+        setGoogleModels(res.models)
+        setEnabledModelKeys(new Set(res.models.map((m) => m.id)))
+        setSyncToast(`已成功同步 ${res.count} 款官方 Recommended 模型！`)
+        window.dispatchEvent(new CustomEvent(MODELS_CATALOG_CHANGED_EVENT))
+        setTimeout(() => setSyncToast(null), 3500)
+      }
+    } catch (e: any) {
+      console.error('[ComputeAccounts] 同步官方模型失败', e)
+      alert(`同步官方模型失败: ${e.message}`)
+    } finally {
+      setSyncingModels(false)
+    }
+  }
+
   const toggleModel = (modelId: string) => {
     const next = new Set(enabledModelKeys)
     if (next.has(modelId)) {
@@ -1103,6 +1143,9 @@ export function ComputeAccountsPanel() {
                 handleSelectNone={handleSelectNone}
                 filteredGoogleModels={filteredGoogleModels}
                 toggleModel={toggleModel}
+                syncingModels={syncingModels}
+                handleSyncRecommendedModels={handleSyncRecommendedModels}
+                syncToast={syncToast}
               />
             ))
           )}

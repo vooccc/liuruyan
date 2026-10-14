@@ -407,10 +407,37 @@ async def test_connection(provider_id: str):
 
 @router.get("/{provider_id}/models")
 async def list_models(provider_id: str):
-    """列出该渠道支持的模型"""
-    if provider_id == "google":
-        return {"ok": True, "models": ANTIGRAVITY_43_MODELS}
-    return {"ok": True, "models": []}
+    """列出该渠道生效的模型（优先展示已同步 Recommended 模型）"""
+    mgr = ComputeAccountsManager.get_instance()
+    models = mgr.get_active_models(provider_id)
+    return {"ok": True, "models": models}
+
+
+@router.post("/{provider_id}/sync-models")
+async def sync_models_endpoint(provider_id: str):
+    """手动从官方云端同步 Recommended 模型列表并持久化保存"""
+    mgr = ComputeAccountsManager.get_instance()
+    adapter = mgr.get_adapter(provider_id)
+    if not adapter:
+        raise HTTPException(status_code=400, detail=f"未知提供商适配器: {provider_id}")
+
+    access_token = await mgr.get_valid_access_token(provider_id)
+    if not access_token:
+        raise HTTPException(status_code=400, detail="无可用已登录账号，请先授权添加账号")
+
+    if hasattr(adapter, "fetch_recommended_models"):
+        recommended_models = await adapter.fetch_recommended_models(access_token)
+        if recommended_models:
+            mgr.set_synced_models(provider_id, recommended_models)
+            return {
+                "ok": True,
+                "count": len(recommended_models),
+                "models": recommended_models,
+                "message": f"成功同步 {len(recommended_models)} 款官方 Recommended 模型",
+            }
+
+    models = mgr.get_active_models(provider_id)
+    return {"ok": True, "count": len(models), "models": models, "message": "已保留当前模型配置"}
 
 
 class SetEnabledModelsRequest(BaseModel):
