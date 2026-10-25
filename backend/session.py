@@ -141,6 +141,11 @@ class Session:
     pinned_guideline: Optional[str] = None
     pinned_scope: List[Dict[str, Any]] = field(default_factory=list)
 
+    # 项目命名空间绑定（v5 记忆分层 2026-10-24）：None = 不绑定（注入走
+    # 全局层 + 工作区自动锚定兜底）；绑定后该会话记忆上下文只挂载此项目的
+    # 状态卡，其他项目物理隔离（详见 backend/namespace_manager.py）。
+    project_namespace: Optional[str] = None
+
     # Worker 专属
     task_description: Optional[str] = None
     task_result: Optional[str] = None
@@ -274,6 +279,7 @@ class Session:
             "token_usage": dict(self.token_usage),
             "pinned_guideline": self.pinned_guideline,
             "pinned_scope": list(self.pinned_scope),
+            "project_namespace": self.project_namespace,
         }
 
     @classmethod
@@ -354,6 +360,10 @@ class Session:
             session.pinned_guideline = raw_guideline
         raw_scope = data.get("pinned_scope")
         session.pinned_scope = dump_scope_items(parse_scope_items(raw_scope))
+        # 项目命名空间绑定：老 meta 没此字段 → None（不绑定）
+        raw_ns = data.get("project_namespace")
+        if isinstance(raw_ns, str) and raw_ns.strip():
+            session.project_namespace = raw_ns.strip()
         if session_dir:
             session.session_dir = session_dir
 
@@ -817,6 +827,18 @@ class Session:
             self.pinned_guideline = None
         else:
             self.pinned_guideline = guideline
+        self.updated_at = datetime.now().isoformat()
+        self.save_meta()
+
+    def set_project_namespace(self, namespace: Optional[str]) -> None:
+        """绑定/解绑会话的项目命名空间。空串 / None 视作解绑。
+
+        合法性（namespace 是否已在注册表注册）由路由层校验；此处只存值。
+        """
+        if namespace is None or not namespace.strip():
+            self.project_namespace = None
+        else:
+            self.project_namespace = namespace.strip()
         self.updated_at = datetime.now().isoformat()
         self.save_meta()
 
@@ -1437,6 +1459,8 @@ class SessionManager:
                 # 与 model 配对的 provider id。仅 model 不够定位（同名 model 在多个
                 # provider 下合法存在），前端 hydrate picker 需要 provider 才能精准匹配。
                 "provider": session.provider,
+                # 项目命名空间绑定（v5 记忆分层）：ChatProjectPicker 回显用
+                "project_namespace": session.project_namespace,
             })
 
         sessions.sort(key=lambda x: x.get("updatedAt", ""), reverse=True)

@@ -2,6 +2,13 @@
 记忆提炼模块 V2 - 使用 LLM 智能提炼对话
 从对话中提取真正重要的内容，生成有情感标记的沉淀记忆
 V2.1: 新增行为洞察提取 → 写入 REFLECTIONS.md
+V3 (2026-10-24): 命名空间五路分流。启用项目命名空间（REGISTRY.json 落盘）后，
+提炼产物不再写扁平 MEMORY.md，而是按 target_scope 分流：
+- relationship → GLOBAL.md（全局层：关系里程碑/跨项目认知，常驻注入）
+- project      → {ns}/timeline.jsonl 追加（事实之源）+ LLM 增量合并状态卡
+- user         → 走既有 REFLECTIONS.md 行为洞察链路
+- discard      → 直接丢弃
+未启用命名空间时保持 V2 行为不变（MEMORY.md 追加）。
 """
 
 from datetime import datetime
@@ -19,6 +26,9 @@ REFLECTIONS_MAX_CHARS = 5000
 
 TEMPERATURE_ORDER = {"burning": 3, "warm": 2, "cold": 1}
 
+# 状态卡单次 LLM 合并的 prompt 上限（防长卡撑爆 flash 模型）
+CARD_MERGE_MAX_CHARS = 8000
+
 
 class MemoryRefinerV2:
     """智能记忆提炼器"""
@@ -31,6 +41,16 @@ class MemoryRefinerV2:
         """
         self.llm_client = llm_client
         self.memory_manager = memory_manager
+
+    @property
+    def _namespaces_active(self) -> bool:
+        try:
+            return self.memory_manager.namespace_manager.is_active()
+        except Exception:
+            return False
+
+    def _namespace_manager(self):
+        return self.memory_manager.namespace_manager
 
     def refine_conversation(
         self,
@@ -46,6 +66,25 @@ class MemoryRefinerV2:
             "date": today,
             "message_span": message_span or [],
         }
+
+        # v3：命名空间模式下附带项目注册表，让 LLM 把 project_name 归到
+        # 已有 canonical 名上；新项目允许自拟短名（注册时自动建）。
+        project_catalog = ""
+        if self._namespaces_active:
+            entries = self._namespace_manager().list_namespaces()
+            catalog_lines = [
+                f"- {e['name']}" + (f"（别名：{'、'.join(e.get('aliases', []))}）" if e.get("aliases") else "")
+                for e in entries if e.get("status") != "archived"
+            ]
+            project_catalog = (
+                "\n已注册的项目（project_name 尽量从中选；确实没有再自拟 ≤10 字新名）：\n"
+                + "\n".join(catalog_lines)
+            ) if catalog_lines else ""
+            scope_spec = '''    "target_scope": "relationship|project|user|discard",
+    "project_name": "target_scope=project 时填写项目名，其余留空",'''
+        else:
+            scope_spec = ''
+
         prompt = f"""你是一个记忆提炼器。请分析以下对话，判断是否值得沉淀为长期记忆。
 
 用户说：
@@ -55,12 +94,17 @@ class MemoryRefinerV2:
 {assistant_message}
 
 来源线索：
-{json.dumps(source_hint, ensure_ascii=False)}
+{json.dumps(source_hint, ensure_ascii=False)}{project_catalog}
 
 请判断：
 1. 这段对话是否包含重要信息？（重要决定、情感时刻、新认知、关系变化等）
 2. 如果重要，请提取关键内容并生成沉淀记忆
 3. 只在真正重要时使用 warm / burning；普通事实或一次性信息用 cold
+4. target_scope 分流规则（重要时必填）：
+   - relationship：两人关系的变化、情感时刻、陪伴承诺、跨项目的相处认知
+   - project：某个具体项目/事务的事实与进展（案件、代码库、投资、运营…）
+   - user：对用户性格/偏好的新洞察（走行为洞察链路，不占长期记忆）
+   - discard：日常闲聊、一次性操作细节、无长期价值
 
 请以 JSON 格式返回：
 {{
@@ -71,7 +115,7 @@ class MemoryRefinerV2:
     "cognition": "形成了什么新的理解，没有则写空字符串",
     "decision": "做出了什么决定（如果有）",
     "tags": ["#标签1", "#标签2"],
-    "temperature": "burning|warm|cold",
+    "temperature": "burning|warm|cold",{scope_spec}
     "source": {{
         "session_id": "{session_id or ''}",
         "date": "{today}",
@@ -224,6 +268,23 @@ class MemoryRefinerV2:
             source["message_span"] = []
         refined["source"] = source
         refined["temperature"] = self._normalize_temperature(refined)
+
+        # v3: target_scope 归一化。LLM 漏填时的兜底规则：
+        # 项目注册表能按文本命中 → project；带情感 → relationship；否则 discard
+        if self._namespaces_active:
+            from .namespace_manager import normalize_refiner_scope
+            scope = normalize_refiner_scope(refined.get("target_scope"))
+            if not scope:
+                hit = self._namespace_manager().resolve_from_text(
+                    refined["event"] + " " + " ".join(refined["tags"])
+                )
+                if hit:
+                    scope = "project"
+                elif str(refined.get("feeling", "")).strip():
+                    scope = "relationship"
+                else:
+                    scope = "discard"
+            refined["target_scope"] = scope
         return refined
 
     def _format_source(self, source: Dict) -> str:
@@ -309,6 +370,111 @@ class MemoryRefinerV2:
             logger.error("[MemoryRefinerV2] 保存失败: %s", e)
             return False
 
+    # ===== v3 命名空间分流（2026-10-24）=====
+
+    def _resolve_project_namespace(self, refined: Dict) -> Optional[str]:
+        """project 记忆归属解析：注册表文本命中 > LLM project_name 精确匹配
+        > 按 LLM 自拟名自动建新项目。解析不出返回 None（降级为全局层）。"""
+        ns = self._namespace_manager()
+        text = refined.get("event", "") + " " + " ".join(refined.get("tags", []))
+        hit = ns.resolve_from_text(text)
+        if hit:
+            return hit
+
+        project_name = str(refined.get("project_name", "") or "").strip()
+        if not project_name:
+            return None
+        for entry in ns.list_namespaces():
+            if entry.get("name") == project_name or project_name in (entry.get("aliases") or []):
+                return entry["id"]
+        # 新项目：LLM 自拟名自动注册（用户可在面板改名/注销）
+        entry = ns.create_namespace(name=project_name[:20])
+        logger.info("[MemoryRefinerV2] auto-created namespace %s for %r", entry["id"], project_name)
+        return entry["id"]
+
+    def _merge_project_card(self, ns_id: str, refined: Dict) -> bool:
+        """状态卡增量合并：现有卡 + 新事实 → LLM 覆写更新后的卡。
+        失败兜底 append_card_line 原文进卡，保证信息不丢。"""
+        ns = self._namespace_manager()
+        card = ns.read_card(ns_id)
+        entry_text = self.generate_memory_entry(refined).strip()
+
+        try:
+            prompt = f"""你是项目状态卡维护器。把【新事实】合并进【现有状态卡】，输出更新后的完整卡片。
+
+规则：
+- 这是"当前状态卡"不是流水账：新事实推翻旧状态时直接覆写，不要保留过时表述
+- 保持/沿用现有卡片结构（当前状态 / 关键事实 / 红线与禁忌 / 情感基调），没有的节可以新建
+- 情感基调 = 与该项目相关的相处氛围，一两行以内
+- 不确定的旧信息宁可不删；禁止编造未提及的内容
+
+【现有状态卡】
+{card[-CARD_MERGE_MAX_CHARS:]}
+
+【新事实】
+{entry_text}
+
+只输出更新后的完整 Markdown 卡片，不要解释。"""
+            response = self.llm_client.chat_completion([
+                {"role": "user", "content": prompt}
+            ])
+            merged = str(response.get("content", "") or "").strip()
+            if merged.startswith("```"):
+                merged = re.sub(r"^```[a-zA-Z]*\n|\n```$", "", merged).strip()
+            if not merged or len(merged) < 20:
+                raise ValueError("merged card too short")
+            ns.write_card(ns_id, merged + "\n")
+        except Exception as e:
+            logger.warning("[MemoryRefinerV2] card merge failed (%s), fallback append", e)
+            ns.append_card_line(ns_id, entry_text)
+
+        # 注册表一行摘要 = 卡片第一行非标题正文（其他项目索引展示用）
+        summary = ""
+        for line in ns.read_card(ns_id).splitlines():
+            stripped = line.strip().lstrip("-* ").strip()
+            if stripped and not stripped.startswith("#") and not stripped.startswith("<!--"):
+                summary = stripped[:80]
+                break
+        ns.update_namespace(ns_id, summary=summary)
+        return True
+
+    def _save_namespaced(self, refined: Dict) -> bool:
+        """v3 分流写入。返回是否写入了长期记忆层（global 或项目卡）。"""
+        ns = self._namespace_manager()
+        scope = refined.get("target_scope")
+
+        if scope == "relationship":
+            parts = [refined.get("event", "")]
+            if refined.get("cognition"):
+                parts.append(f"认知：{refined['cognition']}")
+            if refined.get("feeling"):
+                parts.append(f"感受：{refined['feeling']}")
+            ns.append_global_entry("。".join(p for p in parts if p))
+            return True
+
+        if scope == "project":
+            ns_id = self._resolve_project_namespace(refined)
+            if ns_id is None:
+                # 归属解析失败：带情感的进全局层，纯事实的丢弃
+                if str(refined.get("feeling", "")).strip():
+                    ns.append_global_entry(refined.get("event", ""))
+                    return True
+                logger.info("[MemoryRefinerV2] project 记忆无法归属且无情感，丢弃: %s", refined.get("event", "")[:50])
+                return False
+            # timeline 永远追加（事实之源），卡片增量合并（物化视图）
+            ns.append_timeline(ns_id, {
+                "event": refined.get("event", ""),
+                "decision": refined.get("decision", ""),
+                "cognition": refined.get("cognition", ""),
+                "tags": refined.get("tags", []),
+                "temperature": refined.get("temperature", "warm"),
+                "session_id": (refined.get("source") or {}).get("session_id", ""),
+            })
+            return self._merge_project_card(ns_id, refined)
+
+        # user / discard：不占长期记忆层（user 走 REFLECTIONS 洞察链路）
+        return False
+
     def process_and_save(
         self,
         user_message: str,
@@ -316,7 +482,11 @@ class MemoryRefinerV2:
         session_id: Optional[str] = None,
         message_span: Optional[List[int]] = None,
     ) -> Dict[str, bool]:
-        """完整流程：提炼 → 判断 → 保存（MEMORY.md + REFLECTIONS.md）
+        """完整流程：提炼 → 判断 → 分流保存
+
+        v2（命名空间未启用）: MEMORY.md + REFLECTIONS.md，行为不变
+        v3（命名空间已启用）: GLOBAL.md / 项目卡+timeline / REFLECTIONS.md，
+        **不再写 MEMORY.md**（存量文件冻结为归档）
 
         Returns:
             {"memory_saved": bool, "reflection_saved": bool}
@@ -331,20 +501,28 @@ class MemoryRefinerV2:
             message_span=message_span,
         )
         if refined and refined.get("is_important", False):
-            result["memory_saved"] = self.save_to_memory(refined)
+            if self._namespaces_active:
+                result["memory_saved"] = self._save_namespaced(refined)
+            else:
+                result["memory_saved"] = self.save_to_memory(refined)
 
         # 温度衰减保鲜——无条件触发，重要/不重要都过这道
         # 闸做在 apply_temp_decay() 内部（TEMP_DECAY_MIN_INTERVAL_SEC=1h），多余调用零成本早退
         # 兜的盲区：连续重要对话 → save_to_memory 一直走 → 之前 else 分支永远进不去
         # 现在无论走哪条分支都补位，A 启动钩子 + C 这里 = 真闭环
-        try:
-            self.memory_manager.apply_temp_decay()
-        except Exception as e:
-            logger.warning("[TEMP_DECAY] refiner-side pass failed (non-fatal): %s", e)
+        if not self._namespaces_active:
+            try:
+                self.memory_manager.apply_temp_decay()
+            except Exception as e:
+                logger.warning("[TEMP_DECAY] refiner-side pass failed (non-fatal): %s", e)
 
-        # 2. 提取行为洞察（概率触发）
+        # 2. 提取行为洞察（概率触发；v3 下 user 洞察必过这道）
         import random
-        should_reflect = random.random() < 0.3 or (refined and refined.get("is_important"))
+        should_reflect = (
+            random.random() < 0.3
+            or (refined and refined.get("is_important"))
+            or (refined is not None and refined.get("target_scope") == "user")
+        )
         if should_reflect:
             reflection = self.extract_reflection(user_message, assistant_message)
             if reflection:

@@ -28,6 +28,7 @@ def register(registry):
         _handle_create_memory,
         _handle_recall_memory,
     )
+    from ..project_binding_tool import _handle_set_project_binding
     from backend.lry_workspace_tools import (
         _handle_add_project_rule,
         _handle_update_project_notes,
@@ -61,7 +62,8 @@ def register(registry):
             "  - Text / source code -> `cat -n` lines\n"
             "  - Images (.png / .jpg / .jpeg / .gif / .webp / .bmp) -> base64 inline for vision models "
             "(Claude / GPT-4o / Qwen-VL); max 5 MB\n"
-            "  - PDF (.pdf) -> Anthropic native `document` block or pypdf / pdfplumber text; see `pages` / `pdf_extractor` params\n"
+            "  - PDF (.pdf) -> Anthropic native `document` block, pypdf / pdfplumber text, or (scanned "
+            "image-only PDFs) page images inlined as base64 blocks for any vision model; see `pages` / `pdf_extractor` params\n"
             "  - Office (.docx / .pptx / .xlsx) -> paragraphs / slides / sheets with tables auto-converted to markdown\n"
             "  - Jupyter notebook (.ipynb) -> cells rendered as markdown / fenced code blocks; outputs truncated\n"
             "- Screenshots: ALWAYS use this tool — multimodal models see images directly.\n"
@@ -859,6 +861,35 @@ def register(registry):
             "required": ["content"],
         },
         handler=_handle_update_project_notes,
+    )
+
+    registry.register(
+        name="set_project_binding",
+        description=(
+            "Switch the CURRENT session's project memory context (v5 memory layering).\n\n"
+            "WHEN TO USE:\n"
+            "- User says this chat should be about a specific project "
+            "(e.g. '这个会话聊中微的案子' / 'switch to the legal case')\n"
+            "- The auto-binding at session start picked the wrong project and user corrects it\n"
+            "- User wants no project memory attached -> project='' (unbind)\n\n"
+            "AFTER SWITCHING: only the bound project's state card is injected; "
+            "other projects stay isolated.\n"
+            "For cross-project references use recall_memory instead of switching."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "project": {
+                    "type": "string",
+                    "description": (
+                        "Target project: registered name or alias (e.g. '中微智码维权', '美股'). "
+                        "Empty string / 'none' / '解绑' to unbind."
+                    ),
+                },
+            },
+            "required": ["project"],
+        },
+        handler=_handle_set_project_binding,
     )
 
     registry.register(

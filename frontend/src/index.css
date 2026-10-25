@@ -7808,6 +7808,45 @@ input[type="password"]::-ms-clear {
   border-color: var(--toolbar-active-border);
   box-shadow: var(--toolbar-chip-shadow);
 }
+/* v5 记忆分层：长期记忆 tab 归档横幅（命名空间启用后 MEMORY.md 冻结） */
+.memory-archive-banner {
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--primary-color) 6%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--primary-color) 35%, var(--border-color));
+  border-radius: 10px;
+}
+.memory-archive-banner b { color: var(--text-color); }
+
+.namespace-new-input {
+  width: 100%;
+  padding: 4px 8px;
+  font-size: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--input-bg, transparent);
+  color: var(--text-color);
+}
+.namespace-new-input:focus { outline: none; border-color: var(--primary-color); }
+
+/* v5 项目档案：会话绑定兜底区 */
+.namespace-bind-box {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--primary-color) 4%, transparent);
+}
+.namespace-bind-label { font-size: 11px; color: var(--text-muted); }
+.namespace-bind-box .namespace-new-input { flex: 1; min-width: 160px; width: auto; }
+
 .mode-selector.is-code svg { color: #d8b57a; }
 .mode-selector.is-ask svg { color: #89bcd9; }
 .mode-selector.is-plan svg { color: #91c28f; }

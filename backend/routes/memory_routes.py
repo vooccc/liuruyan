@@ -18,10 +18,22 @@
 - DELETE /memory/reflections/{agent_id} 删除某条洞察
 - GET    /memory/temp-stats            记忆温度统计
 - GET    /memory/report                记忆大小报告
+- GET    /memory/user                  用户画像 USER.md
+- PUT    /memory/user                  更新用户画像
+
+v5 项目命名空间（2026-10-24，详见 backend/namespace_manager.py）：
+- GET    /memory/namespaces            项目注册表（含启用状态与统计）
+- POST   /memory/namespaces            注册项目
+- PUT    /memory/namespaces/{ns_id}    更新项目（名称/别名/工作区/摘要）
+- DELETE /memory/namespaces/{ns_id}    注销项目（数据归档不物理删除）
+- GET    /memory/namespaces/{ns_id}    项目状态卡 + timeline 尾部
+- PUT    /memory/namespaces/{ns_id}/card  覆写状态卡
+- GET    /memory/global                全局层（关系记忆）
+- PUT    /memory/global                覆写全局层
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -40,6 +52,22 @@ class MemoryRequest(BaseModel):
 
 class MemoryUpdateRequest(BaseModel):
     content: str
+
+
+class NamespaceCreateRequest(BaseModel):
+    name: str
+    aliases: List[str] = []
+    workspace_path: Optional[str] = None
+    agent_id: Optional[str] = None
+
+
+class NamespaceUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    aliases: Optional[List[str]] = None
+    workspace_path: Optional[str] = None
+    summary: Optional[str] = None
+    status: Optional[str] = None
+    agent_id: Optional[str] = None
 
 
 @router.post("/memory")
@@ -172,3 +200,128 @@ async def get_memory_report(agent_id: Optional[str] = None):
     """获取记忆系统大小报告"""
     memory_manager = get_memory_manager(agent_id=agent_id or "default")
     return memory_manager.get_memory_size_report()
+
+
+@router.get("/memory/user")
+async def get_user_profile(agent_id: Optional[str] = None):
+    """获取用户画像 USER.md"""
+    memory_manager = get_memory_manager(agent_id=agent_id or "default")
+    content = memory_manager.read_user_profile()
+    return {"content": content}
+
+
+@router.put("/memory/user")
+async def update_user_profile(request: MemoryUpdateRequest, agent_id: Optional[str] = None):
+    """更新用户画像 USER.md"""
+    memory_manager = get_memory_manager(agent_id=agent_id or "default")
+    memory_manager.write_user_profile(request.content)
+    return {"status": "success", "ok": True}
+
+
+@router.post("/memory/user/reset")
+async def reset_user_profile(agent_id: Optional[str] = None):
+    """重置用户画像为默认模板"""
+    from backend.agent_config import DEFAULT_USER_MD
+    memory_manager = get_memory_manager(agent_id=agent_id or "default")
+    memory_manager.write_user_profile(DEFAULT_USER_MD)
+    return {"status": "success", "ok": True, "content": DEFAULT_USER_MD}
+
+
+# ====== v5 项目命名空间（2026-10-24）======
+
+
+def _ns_manager(agent_id: Optional[str]):
+    return get_memory_manager(agent_id=agent_id or "default").namespace_manager
+
+
+@router.get("/memory/namespaces")
+async def list_namespaces(agent_id: Optional[str] = None):
+    """项目注册表 + 启用状态。namespaces 未启用（无 REGISTRY.json）时 active=false，
+    前端据此提示先跑迁移/创建首个项目。"""
+    manager = _ns_manager(agent_id)
+    return {
+        "active": manager.is_active(),
+        "namespaces": manager.list_namespaces(),
+        "stats": manager.stats(),
+    }
+
+
+@router.post("/memory/namespaces")
+async def create_namespace(request: NamespaceCreateRequest):
+    """注册新项目命名空间。首个项目创建时自动落盘 REGISTRY.json（启用 v5 模式）。"""
+    if not request.name.strip():
+        raise HTTPException(status_code=400, detail="项目名不能为空")
+    manager = _ns_manager(request.agent_id)
+    entry = manager.create_namespace(
+        name=request.name,
+        aliases=request.aliases,
+        workspace_path=request.workspace_path,
+    )
+    return {"status": "success", "namespace": entry, "active": manager.is_active()}
+
+
+@router.put("/memory/namespaces/{ns_id}")
+async def update_namespace(ns_id: str, request: NamespaceUpdateRequest):
+    """更新项目元数据（名称/别名/工作区锚/一行摘要/归档状态）。"""
+    manager = _ns_manager(request.agent_id)
+    entry = manager.update_namespace(
+        ns_id,
+        name=request.name,
+        aliases=request.aliases,
+        workspace_path=request.workspace_path,
+        summary=request.summary,
+        status=request.status,
+    )
+    if entry is None:
+        raise HTTPException(status_code=404, detail=f"项目命名空间不存在: {ns_id}")
+    return {"status": "success", "namespace": entry}
+
+
+@router.delete("/memory/namespaces/{ns_id}")
+async def delete_namespace(ns_id: str, agent_id: Optional[str] = None):
+    """注销项目：摘注册表 + 数据挪 _archived/ 留底（可手工恢复）。"""
+    manager = _ns_manager(agent_id)
+    if not manager.delete_namespace(ns_id):
+        raise HTTPException(status_code=404, detail=f"项目命名空间不存在: {ns_id}")
+    return {"status": "success", "message": f"项目 {ns_id} 已注销（数据已归档）"}
+
+
+@router.get("/memory/namespaces/{ns_id}")
+async def get_namespace(ns_id: str, agent_id: Optional[str] = None):
+    """读取项目详情：注册表项 + 状态卡 + timeline 尾部。"""
+    manager = _ns_manager(agent_id)
+    entry = manager.get_namespace(ns_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail=f"项目命名空间不存在: {ns_id}")
+    return {
+        "namespace": entry,
+        "card": manager.read_card(ns_id),
+        "timeline": manager.read_timeline(ns_id, limit=50),
+    }
+
+
+@router.put("/memory/namespaces/{ns_id}/card")
+async def update_namespace_card(
+    ns_id: str, request: MemoryUpdateRequest, agent_id: Optional[str] = None
+):
+    """覆写项目状态卡（用户在记忆面板手动编辑）。timeline 不受影响。"""
+    manager = _ns_manager(agent_id)
+    if manager.get_namespace(ns_id) is None:
+        raise HTTPException(status_code=404, detail=f"项目命名空间不存在: {ns_id}")
+    manager.write_card(ns_id, request.content)
+    return {"status": "success", "ok": True}
+
+
+@router.get("/memory/global")
+async def get_global_memory(agent_id: Optional[str] = None):
+    """读取全局层（关系里程碑 + 跨项目认知）GLOBAL.md"""
+    return {"content": _ns_manager(agent_id).read_global()}
+
+
+@router.put("/memory/global")
+async def update_global_memory(
+    request: MemoryUpdateRequest, agent_id: Optional[str] = None
+):
+    """覆写全局层（用户在记忆面板手动编辑）"""
+    _ns_manager(agent_id).write_global(request.content)
+    return {"status": "success", "ok": True}

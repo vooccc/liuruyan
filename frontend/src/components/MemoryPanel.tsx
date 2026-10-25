@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import {
   BookOpen, Brain, RefreshCw,
   Save, X, ChevronRight, Eye, BarChart3, Thermometer,
-  ChevronDown, Plus, Trash2, MessageSquare
+  ChevronDown, Plus, Trash2, MessageSquare, User, FolderKanban
 } from 'lucide-react'
 import {
   getLongTermMemory,
@@ -10,17 +10,21 @@ import {
   getReflections, getTempStats, getMemoryReport,
   saveReflections, deleteReflectionItem,
   listSessionsByAgent, getSession,
+  listNamespaces,
   Session, Message,
 } from '../api/chat'
 import { Agent } from '../api/chat'
 import { useAlertDialog, useConfirmDialog } from './ConfirmDialog'
 import AgentAvatar from './AgentAvatar'
 import { getAvatarSrc } from './avatarUtils'
+import UserProfileView from './UserProfileView'
+import NamespaceProjectsView from './NamespaceProjectsView'
 
 // v4 (2026-05-22): tab 'today' / 'diaries' 已废除（diary 注入下线）。
-// 新增 'sessions' tab（会话浏览器）替代逐字日记入口；
+// 新增 'user' tab（用户画像与认知）+ 'sessions' tab（会话浏览器）
 // 'longterm' / 'reflections' / 'stats' 保持不变。
-type Tab = 'sessions' | 'longterm' | 'reflections' | 'stats'
+// v5 (2026-10-24): 新增 'projects' tab（项目档案：命名空间状态卡 + 全局层）。
+type Tab = 'user' | 'sessions' | 'projects' | 'longterm' | 'reflections' | 'stats'
 
 interface TempStats {
   total: number; burning: number; warm: number; cold: number; unlabeled: number
@@ -47,6 +51,9 @@ export default function MemoryPanel({ onClose, agentId: initialAgentId, agents, 
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const [longTermContent, setLongTermContent] = useState('')
+  // v5 记忆分层：该角色是否已启用项目命名空间。启用后 MEMORY.md 冻结为归档
+  // （注入层不读、refiner 不写），「长期记忆」tab 降级为归档查看器。
+  const [nsActive, setNsActive] = useState(false)
   // 会话浏览器（v4 取代旧 diaries tab）
   const [sessionList, setSessionList] = useState<Session[]>([])
   const [sessionListLoading, setSessionListLoading] = useState(false)
@@ -89,15 +96,17 @@ export default function MemoryPanel({ onClose, agentId: initialAgentId, agents, 
 
   async function loadAll() {
     try {
-      const [lt, ref, sessions] = await Promise.all([
+      const [lt, ref, sessions, nsList] = await Promise.all([
         getLongTermMemory(viewAgentId),
         getReflections(viewAgentId),
         listSessionsByAgent(viewAgentId),
+        listNamespaces(viewAgentId).catch(() => null),
       ])
       setLongTermContent(lt.content)
       setEditLTContent(lt.content)
       setReflections(ref.content)
       setSessionList(sessions)
+      setNsActive(Boolean(nsList?.active))
       // 切换角色时重置选中 session 和统计
       setSelectedSessionId(null)
       setSelectedSessionMessages([])
@@ -193,9 +202,10 @@ export default function MemoryPanel({ onClose, agentId: initialAgentId, agents, 
   }
 
   const tabs: { key: Tab; label: string; icon: typeof MessageSquare }[] = [
-    // v4 (2026-05-22): 'today' / 'diaries' 已下线，被 'sessions' 取代
+    { key: 'user', label: '用户画像', icon: User },
     { key: 'sessions', label: '会话', icon: MessageSquare },
-    { key: 'longterm', label: '长期记忆', icon: Brain },
+    { key: 'projects', label: '项目档案', icon: FolderKanban },
+    { key: 'longterm', label: nsActive ? '长期记忆·归档' : '长期记忆', icon: Brain },
     { key: 'reflections', label: '反思', icon: Eye },
     { key: 'stats', label: '统计', icon: BarChart3 },
   ]
@@ -282,6 +292,14 @@ export default function MemoryPanel({ onClose, agentId: initialAgentId, agents, 
 
         {/* 内容区 */}
         <div className="panel-content">
+          {activeTab === 'user' && (
+            <UserProfileView agentId={viewAgentId} />
+          )}
+
+          {activeTab === 'projects' && (
+            <NamespaceProjectsView agentId={viewAgentId} />
+          )}
+
           {activeTab === 'sessions' && (
             <div className="memory-section diaries-layout">
               {/* 会话列表 */}
@@ -339,8 +357,14 @@ export default function MemoryPanel({ onClose, agentId: initialAgentId, agents, 
 
           {activeTab === 'longterm' && (
             <div className="memory-section">
+              {nsActive && (
+                <div className="memory-archive-banner">
+                  🧊 该角色已启用<b>项目记忆分层</b>：此文件已冻结为归档，不再注入对话、不再写入新内容。
+                  日常记忆请看「项目档案」与「反思」；此处仅供追溯历史。
+                </div>
+              )}
               <div className="section-toolbar">
-                <h3>长期记忆</h3>
+                <h3>长期记忆{nsActive ? '（已归档）' : ''}</h3>
                 {!editingLT ? (
                   <button className="text-btn" onClick={() => setEditingLT(true)}>编辑</button>
                 ) : (

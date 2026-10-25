@@ -598,14 +598,86 @@ class Agent:
             "enable_caching": enable_caching
         }
 
-    def get_memory_context(self, budget_tokens: int = 8000) -> str:
-        """获取记忆上下文（带预算控制）
+    def get_memory_context(
+        self,
+        budget_tokens: int = 8000,
+        session_id: Optional[str] = None,
+        user_message: Optional[str] = None,
+    ) -> str:
+        """获取记忆上下文（带预算控制 + v5 命名空间分流）
+
+        命名空间解析优先级：
+        1. 显式 session_id（v2 chain shim 不传时从 ContextVar 兜底）；
+        2. session.project_namespace（用户手动绑定 / 开篇自动绑定）；
+        3. session 工作区目录 → 注册表 workspace 锚定（编码项目自动绑定）。
 
         Args:
             budget_tokens: 记忆上下文 token 预算
+            session_id: 会话 ID；None 时读 llm_client 的会话 ContextVar
+            user_message: 本轮用户消息原文；开篇未绑定时用于项目自动识别
         """
+        session_ns, workspace = self._resolve_session_namespace(
+            session_id, user_message=user_message
+        )
+        # 本轮临时提及的项目：用户这条消息命中了非主绑定的项目 → 该轮
+        # 带出其状态卡（标注"仅本轮参考"），不改会话主绑定。中途聊到
+        # 别的项目"随提随取"，不抢切。
+        turn_ns = None
+        if user_message:
+            try:
+                ns_manager = self.memory_manager.namespace_manager
+                if ns_manager.is_active():
+                    hit = ns_manager.resolve_from_text(user_message)
+                    if hit and hit != session_ns:
+                        turn_ns = hit
+            except Exception:
+                turn_ns = None
         self.memory_manager.prefetch(budget_tokens=budget_tokens)
-        return self.memory_manager.get_context_for_chat(budget_tokens=budget_tokens)
+        return self.memory_manager.get_context_for_chat(
+            budget_tokens=budget_tokens,
+            session_ns=session_ns,
+            workspace=workspace,
+            turn_ns=turn_ns,
+        )
+
+    def _resolve_session_namespace(
+        self,
+        session_id: Optional[str],
+        user_message: Optional[str] = None,
+    ) -> tuple[Optional[str], Optional[str]]:
+        """解析当前会话的项目命名空间与工作区目录。任何失败都静默降级
+        为 (None, None) —— 命名空间注入是增强，不能阻塞主链路。"""
+        try:
+            if session_id is None:
+                from .llm_client import _current_session_id_var
+                session_id = _current_session_id_var.get()
+            if not session_id:
+                return None, None
+
+            # SessionManager 内存态直读（get_session 是 async；_sessions 是
+            # 全局扁平 dict，同步可读）。命中不了 → (None, None) 静默降级。
+            from .session import get_session_manager
+            session = get_session_manager()._sessions.get(session_id)
+            if session is None:
+                return None, None
+            workspace = session.get_pinned_workspace_directory()
+
+            ns_manager = self.memory_manager.namespace_manager
+            if ns_manager.is_active():
+                # 显式绑定（手动/自动）优先；其次工作区锚定；最后开篇自动识别
+                if session.project_namespace:
+                    return session.project_namespace, workspace
+                workspace_ns = ns_manager.resolve_from_workspace(workspace)
+                if workspace_ns:
+                    return workspace_ns, workspace
+                from .namespace_manager import autobind_project
+                hit = autobind_project(session, ns_manager, user_message or "")
+                if hit:
+                    return hit, workspace
+
+            return None, workspace
+        except Exception:
+            return None, None
 
     def get_active_context_length(self) -> Optional[int]:
         """返回本次调用实际模型的上下文窗口，供 v1/v2 压缩链共同使用。"""
@@ -834,7 +906,9 @@ class Agent:
         # 调 self.agent.get_memory_context() 拿同样的字符串塞 state["memory_text"]，
         # mw 03 在 before_model 钩子注入到第一条 user 之前 — 行为跟 v1 等价。
         if not self._should_use_v2_chain():
-            memory_context = self.get_memory_context()
+            memory_context = self.get_memory_context(
+                session_id=session_id, user_message=user_message
+            )
             if memory_context:
                 messages.append({
                     "role": "system",

@@ -711,6 +711,12 @@ class MemoryManager:
         self.long_term_memory_file = self.provider.long_term_memory_file
         self.conversation_history_file = self.provider.conversation_history_file
         self.reflections_file = self.provider.reflections_file
+        # v5 记忆分层（2026-10-24）：项目命名空间（注册表 + 状态卡 + timeline）。
+        # REGISTRY.json 落盘即启用（is_active），否则 get_context_for_chat 走
+        # legacy MEMORY.md 路径，行为与 v4 完全一致。见 namespace_manager.py。
+        # base_dir 容错：provider（含测试 stub）可能给 str。
+        from .namespace_manager import NamespaceManager
+        self.namespace_manager = NamespaceManager(Path(str(self.base_dir)) / "namespaces")
         # 衰减扫描节流：进程内累计的上次扫描完成时间戳
         # 进程重启会丢失，但启动钩子会立刻补一次扫描，闭环不出现盲区
         self._last_decay_ts: float = 0.0
@@ -760,6 +766,14 @@ class MemoryManager:
     def write_reflections(self, content: str) -> None:
         """写入行为洞察。"""
         self.provider.write_reflections(content)
+
+    def read_user_profile(self) -> str:
+        """读取用户画像 USER.md。"""
+        return self.provider.read_user_profile()
+
+    def write_user_profile(self, content: str) -> None:
+        """写入用户画像 USER.md。"""
+        self.provider.write_user_profile(content)
 
     def list_diary_files(self) -> List[Path]:
         """列出全部日记文件。"""
@@ -843,7 +857,13 @@ class MemoryManager:
 
     # ===== 核心改造：带预算的上下文构建 =====
 
-    def get_context_for_chat(self, budget_tokens: int = 8000) -> str:
+    def get_context_for_chat(
+        self,
+        budget_tokens: int = 8000,
+        session_ns: Optional[str] = None,
+        workspace: Optional[str] = None,
+        turn_ns: Optional[str] = None,
+    ) -> str:
         """获取用于聊天的记忆上下文（带预算控制 + 温度排序）
 
         v3 改造:
@@ -857,14 +877,33 @@ class MemoryManager:
           session_search 工具按需召回。旧的 memory/{date}.md 文件保留在
           盘上做归档但不再读取/写入。详见
           docs/architecture_spec.md（待补）。
+        - v5 (2026-10-24): **命名空间分流**。REGISTRY.json 存在时切换到
+          分层注入（全局层 GLOBAL.md + 会话绑定项目的状态卡 + 其他项目
+          单行索引），**不再读取 MEMORY.md**——跨项目内容物理隔离，
+          解决多项目串台。legacy 路径仅在未启用命名空间时兜底。
 
         Args:
             budget_tokens: 记忆上下文总 token 预算，默认 8000
+            session_ns: 会话绑定的项目命名空间 id（None = 未绑定，
+                尝试工作区自动锚定）
+            workspace: 会话当前工作区目录（编码项目自动锚定用）
 
         Note:
             人格核心文件(IDENTITY/SOUL/PERSONALITY/USER)由 config.py 的
             build_system_prompt() 负责加载，此处不再重复加载，避免双重注入。
         """
+        # ── v5: 命名空间模式 ──────────────────────────────────
+        if self.namespace_manager.is_active():
+            rendered = self.namespace_manager.render_chat_context(
+                session_ns=session_ns,
+                workspace=workspace,
+                turn_ns=turn_ns,
+            )
+            if estimate_tokens(rendered) > budget_tokens:
+                rendered = truncate_to_tokens(rendered, budget_tokens)
+            return rendered
+
+        # ── legacy: 扁平 MEMORY.md 路径（未迁移时行为与 v4 一致） ──
         context_parts = []
         remaining_budget = budget_tokens
 

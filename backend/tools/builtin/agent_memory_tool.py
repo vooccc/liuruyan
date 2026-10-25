@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 import uuid
 from pathlib import Path
@@ -338,6 +339,81 @@ def _temp_weight(rec: Dict[str, Any]) -> float:
     """读 record 的温度权重；缺失或非法值默认 cold (1.0)。"""
     temp = rec.get("temp") or _TEMP_COLD
     return _TEMP_WEIGHT.get(temp, 1.0)
+
+
+def _load_namespace_records(agent_id: Optional[str]) -> List[Dict[str, Any]]:
+    """v5 命名空间记忆 → recall 伪记录（2026-10-24）。
+
+    让 recall_memory 不只搜 create_memory 的 KV 存储：全局层条目、项目状态卡、
+    timeline 事件全部参与 BM25/混合检索——"让她回想一下"能想起迁移后的分层记忆。
+    伪记录只读不写（recall_count/温度升温只作用于 KV 记录，id 前缀隔离天然跳过）。
+    """
+    try:
+        from backend.memory_manager import get_memory_manager
+
+        ns = get_memory_manager(agent_id=agent_id).namespace_manager
+        if not ns.is_active():
+            return []
+    except Exception:
+        return []
+
+    def _ts_from_date(value: Any) -> int:
+        try:
+            from datetime import datetime
+
+            return int(datetime.fromisoformat(str(value)[:10]).timestamp())
+        except Exception:
+            return 0
+
+    records: List[Dict[str, Any]] = []
+
+    # 全局层：### [date] title 条目
+    global_text = ns.read_global()
+    for i, m in enumerate(re.finditer(r"^### \[(\d{4}-\d{2}-\d{2})\]\s*(.+)$", global_text, re.M)):
+        start = m.end()
+        nxt = global_text.find("\n### [", start)
+        body = global_text[start: nxt if nxt != -1 else len(global_text)].strip()
+        records.append({
+            "id": f"ns_global_{i}",
+            "content": (m.group(2).strip() + ("\n" + body if body else "")).strip(),
+            "tags": ["global", "relationship"],
+            "ts": _ts_from_date(m.group(1)),
+            "temp": _TEMP_WARM,
+            "source": "namespace_global",
+        })
+
+    # 项目状态卡（每项目一条）+ timeline 事件（每条一记录）
+    for entry in ns.list_namespaces():
+        if entry.get("status") == "archived":
+            continue
+        ns_id = entry.get("id") or ""
+        tags = [entry.get("name", ns_id)] + list(entry.get("aliases") or [])
+        card = ns.read_card(ns_id).strip()
+        if card:
+            records.append({
+                "id": f"ns_card_{ns_id}",
+                "content": card,
+                "tags": tags,
+                "ts": int(time.time()),
+                "temp": _TEMP_WARM,
+                "source": "namespace_card",
+            })
+        for j, tl in enumerate(ns.read_timeline(ns_id, limit=200)):
+            content = "。".join(
+                str(tl.get(k, "")) for k in ("event", "decision", "cognition") if tl.get(k)
+            )
+            if not content:
+                continue
+            records.append({
+                "id": f"ns_tl_{ns_id}_{j}",
+                "content": content,
+                "tags": tags,
+                "ts": _ts_from_date(tl.get("ts")),
+                "temp": _TEMP_COLD,
+                "source": "namespace_timeline",
+            })
+
+    return records
 
 
 def _record_recall_hits(
@@ -857,6 +933,18 @@ async def recall_memory_async(
             r["_scope"] = s  # 标注来源 bucket，给 match_reason 用
             records_by_id[mid] = r
             all_records.append(r)
+
+    # v5 (2026-10-24)：并入命名空间伪记录（全局层/项目卡/timeline）。
+    # 只进 private 视角；id 前缀隔离不会与 KV 撞车；BM25 参与排名，
+    # 向量索引里没有这些 id → vector 腿自然跳过（auto 模式靠 RRF 合并）。
+    if scope in ("private", "all"):
+        for r in _load_namespace_records(agent_id):
+            if r["id"] in records_by_id:
+                continue
+            r["_scope"] = "private"
+            records_by_id[r["id"]] = r
+            all_records.append(r)
+        stores.append("namespaces(global+cards+timeline)")
 
     if not all_records:
         return json.dumps({

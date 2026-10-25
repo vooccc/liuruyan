@@ -90,6 +90,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   // Stage B-1 / C-2 / D：messages 走 store selector。store sessions[sid].chatMessages
   // 是真值（ref 层已删）；写入由 setSessionChatMessages action 完成。
   const messages = useAppStore((state) => state.sessions[currentSession?.id || '']?.chatMessages ?? EMPTY_MESSAGES)
+
   const [timelineItems, setTimelineItems] = useState<ChatTimelineItem[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)

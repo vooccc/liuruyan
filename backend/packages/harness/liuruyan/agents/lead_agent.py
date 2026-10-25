@@ -122,8 +122,24 @@ class LeadAgent:
         # USER+MEMORY+日记+反思+情感整段拼装好的字符串。失败 → "" → mw 跳过注入。
         # 不直接 import backend.memory_manager（boundary 红线）；走 duck-typing
         # 调 v1 Agent.get_memory_context()——v1 内部已 prefetch + 温度排序 + 截断。
+        # v5（2026-10-24）：带上最后一条 user 消息原文，供开篇项目自动识别
+        # （namespace autobind；见 backend/namespace_manager.autobind_project）。
         try:
-            memory_text = self.agent.get_memory_context() or ""
+            last_user_text = ""
+            for _m in reversed(messages):
+                if _m.get("role") == "user":
+                    _c = _m.get("content")
+                    if isinstance(_c, str):
+                        last_user_text = _c
+                    elif isinstance(_c, list):
+                        last_user_text = "\n".join(
+                            str(_b.get("text", "")) for _b in _c
+                            if isinstance(_b, dict) and _b.get("type") == "text"
+                        )
+                    break
+            memory_text = (
+                self.agent.get_memory_context(user_message=last_user_text) or ""
+            )
         except Exception:
             log.exception("LeadAgent._build_state: get_memory_context failed")
             memory_text = ""

@@ -2230,6 +2230,8 @@ async def get_session(session_id: str):
         # 与 model 配对的 provider id（2026-05-12 引入）。前端 hydrate picker
         # 时必须读这个字段而非按 model id 反查，避免同名 model 跨多 provider 走错家。
         "provider": session.provider,
+        # 项目命名空间绑定（v5 记忆分层）：null = 未绑定
+        "project_namespace": session.project_namespace,
     }}
 
 
@@ -2452,6 +2454,35 @@ async def update_session_pinned_scope(session_id: str, body: dict):
         "session_id": session.id,
         "scope": saved,
     }
+
+
+@app.put("/sessions/{session_id}/project")
+async def update_session_project(session_id: str, body: dict):
+    """绑定/解绑会话的项目命名空间。body: {namespace: str | null, agent_id?: str}。
+
+    namespace 必须已注册（REGISTRY.json 存在）；null/空串 = 解绑。
+    绑定后该会话的记忆上下文只挂载该项目的状态卡，其他项目物理隔离。
+    """
+    session_mgr = get_session_manager()
+    session = await session_mgr.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    raw_ns = body.get("namespace") if isinstance(body, dict) else None
+    if raw_ns is None or (isinstance(raw_ns, str) and not raw_ns.strip()):
+        session.set_project_namespace(None)
+        return {"session_id": session.id, "project_namespace": None}
+
+    if not isinstance(raw_ns, str):
+        raise HTTPException(status_code=400, detail="namespace 必须是字符串或 null")
+
+    agent_id = body.get("agent_id") or session.agent_id
+    ns_manager = get_memory_manager(agent_id=agent_id).namespace_manager
+    if not ns_manager.get_namespace(raw_ns.strip()):
+        raise HTTPException(status_code=404, detail=f"项目命名空间不存在: {raw_ns}")
+
+    session.set_project_namespace(raw_ns)
+    return {"session_id": session.id, "project_namespace": session.project_namespace}
 
 
 # ====== Goal 模式 API（目标驱动持续推演）======

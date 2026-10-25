@@ -214,6 +214,9 @@ export interface Session {
    *  claude-opus-4-7），仅靠 model id 反查会命中列表里第一家。hydrate picker
    *  时优先读该字段，仅当老 session 缺该字段时 fallback 到 customModels.find 。 */
   provider?: string | null
+  /** 项目命名空间绑定（v5 记忆分层 2026-10-24）：该会话记忆上下文只挂载此
+   *  项目的状态卡，其他项目物理隔离。null = 未绑定（走全局层 + 工作区锚定兜底）。 */
+  project_namespace?: string | null
   /** Token 累计消耗（后端 session.json 持久化 → listSessions 返回 → hydrate store），
    *  与 SSE `session_token_usage` 事件同源 — payload 是累加后的总值。 */
   token_usage?: {
@@ -1360,6 +1363,174 @@ export async function deleteReflectionItem(index: number, agentId?: string): Pro
     body: JSON.stringify({ index }),
   })
   if (!res.ok) throw new Error('Failed to delete reflection item')
+  return res.json()
+}
+
+/** 获取用户画像 USER.md */
+export async function getUserProfile(agentId?: string): Promise<{ content: string }> {
+  const url = agentId ? `${API_BASE}/memory/user?agent_id=${agentId}` : `${API_BASE}/memory/user`
+  const res = await fetch(url)
+  if (!res.ok) throw new Error('Failed to get user profile')
+  return res.json()
+}
+
+/** 更新用户画像 USER.md */
+export async function updateUserProfile(content: string, agentId?: string): Promise<{ ok: boolean }> {
+  const url = agentId ? `${API_BASE}/memory/user?agent_id=${agentId}` : `${API_BASE}/memory/user`
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  })
+  if (!res.ok) throw new Error('Failed to update user profile')
+  return res.json()
+}
+
+/** 重置用户画像为默认模板 */
+export async function resetUserProfile(agentId?: string): Promise<{ ok: boolean; content: string }> {
+  const url = agentId ? `${API_BASE}/memory/user/reset?agent_id=${agentId}` : `${API_BASE}/memory/user/reset`
+  const res = await fetch(url, { method: 'POST' })
+  if (!res.ok) throw new Error('Failed to reset user profile')
+  return res.json()
+}
+
+
+// ====== v5 项目命名空间（2026-10-24，跨项目记忆隔离）======
+
+export interface ProjectNamespace {
+  id: string
+  name: string
+  aliases: string[]
+  workspace_path: string | null
+  summary: string
+  status: 'active' | 'archived'
+  created_at: string
+  updated_at: string
+}
+
+export interface NamespaceListResult {
+  active: boolean
+  namespaces: ProjectNamespace[]
+  stats?: {
+    active: boolean
+    count: number
+    global_chars: number
+    cards: Record<string, { chars: number; name: string }>
+  }
+}
+
+export interface NamespaceDetail {
+  namespace: ProjectNamespace
+  card: string
+  timeline: Array<Record<string, unknown>>
+}
+
+/** 项目注册表。active=false 表示未启用命名空间（无 REGISTRY.json）。 */
+export async function listNamespaces(agentId?: string): Promise<NamespaceListResult> {
+  const url = agentId ? `${API_BASE}/memory/namespaces?agent_id=${agentId}` : `${API_BASE}/memory/namespaces`
+  const res = await noStoreFetch(url)
+  if (!res.ok) throw new Error('Failed to list namespaces')
+  return res.json()
+}
+
+/** 注册新项目（首个项目创建时自动启用命名空间模式）。 */
+export async function createNamespace(
+  name: string,
+  options?: { aliases?: string[]; workspacePath?: string | null; agentId?: string },
+): Promise<{ namespace: ProjectNamespace; active: boolean }> {
+  const res = await fetch(`${API_BASE}/memory/namespaces`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name,
+      aliases: options?.aliases ?? [],
+      workspace_path: options?.workspacePath ?? null,
+      agent_id: options?.agentId ?? null,
+    }),
+  })
+  if (!res.ok) throw new Error('Failed to create namespace')
+  return res.json()
+}
+
+/** 更新项目元数据（名称/别名/工作区锚/一行摘要）。 */
+export async function updateNamespace(
+  nsId: string,
+  patch: { name?: string; aliases?: string[]; workspace_path?: string | null; summary?: string; agentId?: string },
+): Promise<{ namespace: ProjectNamespace }> {
+  const res = await fetch(`${API_BASE}/memory/namespaces/${encodeURIComponent(nsId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...patch, agent_id: patch.agentId ?? null }),
+  })
+  if (!res.ok) throw new Error('Failed to update namespace')
+  return res.json()
+}
+
+/** 注销项目（数据归档到 _archived/，不物理删除）。 */
+export async function deleteNamespace(nsId: string, agentId?: string): Promise<{ ok: boolean }> {
+  const url = agentId
+    ? `${API_BASE}/memory/namespaces/${encodeURIComponent(nsId)}?agent_id=${agentId}`
+    : `${API_BASE}/memory/namespaces/${encodeURIComponent(nsId)}`
+  const res = await fetch(url, { method: 'DELETE' })
+  if (!res.ok) throw new Error('Failed to delete namespace')
+  return res.json()
+}
+
+/** 项目详情：注册表项 + 状态卡 + timeline 尾部。 */
+export async function getNamespace(nsId: string, agentId?: string): Promise<NamespaceDetail> {
+  const url = agentId
+    ? `${API_BASE}/memory/namespaces/${encodeURIComponent(nsId)}?agent_id=${agentId}`
+    : `${API_BASE}/memory/namespaces/${encodeURIComponent(nsId)}`
+  const res = await noStoreFetch(url)
+  if (!res.ok) throw new Error('Failed to get namespace')
+  return res.json()
+}
+
+/** 覆写项目状态卡（记忆面板手动编辑）。 */
+export async function updateNamespaceCard(nsId: string, card: string, agentId?: string): Promise<{ ok: boolean }> {
+  const url = agentId
+    ? `${API_BASE}/memory/namespaces/${encodeURIComponent(nsId)}/card?agent_id=${agentId}`
+    : `${API_BASE}/memory/namespaces/${encodeURIComponent(nsId)}/card`
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content: card }),
+  })
+  if (!res.ok) throw new Error('Failed to update namespace card')
+  return res.json()
+}
+
+/** 全局层（关系里程碑 + 跨项目认知）GLOBAL.md。 */
+export async function getGlobalMemory(agentId?: string): Promise<{ content: string }> {
+  const url = agentId ? `${API_BASE}/memory/global?agent_id=${agentId}` : `${API_BASE}/memory/global`
+  const res = await noStoreFetch(url)
+  if (!res.ok) throw new Error('Failed to get global memory')
+  return res.json()
+}
+
+export async function updateGlobalMemory(content: string, agentId?: string): Promise<{ ok: boolean }> {
+  const url = agentId ? `${API_BASE}/memory/global?agent_id=${agentId}` : `${API_BASE}/memory/global`
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  })
+  if (!res.ok) throw new Error('Failed to update global memory')
+  return res.json()
+}
+
+/** 绑定/解绑会话的项目命名空间。null = 解绑。 */
+export async function setSessionProject(
+  sessionId: string,
+  namespace: string | null,
+  agentId?: string,
+): Promise<{ session_id: string; project_namespace: string | null }> {
+  const res = await fetch(`${API_BASE}/sessions/${encodeURIComponent(sessionId)}/project`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ namespace, agent_id: agentId ?? null }),
+  })
+  if (!res.ok) throw new Error('Failed to set session project')
   return res.json()
 }
 

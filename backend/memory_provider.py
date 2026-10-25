@@ -21,6 +21,7 @@ class BaseMemoryProvider:
         long_term_memory_file: Path,
         conversation_history_file: Path,
         reflections_file: Path,
+        user_file: Optional[Path] = None,
     ) -> None:
         self.agent_id = agent_id
         self.base_dir = base_dir
@@ -28,6 +29,7 @@ class BaseMemoryProvider:
         self.long_term_memory_file = long_term_memory_file
         self.conversation_history_file = conversation_history_file
         self.reflections_file = reflections_file
+        self.user_file = user_file or (base_dir / "USER.md")
         self.ensure_ready()
 
     def ensure_ready(self) -> None:
@@ -110,6 +112,14 @@ class BaseMemoryProvider:
     def write_reflections(self, content: str) -> None:
         self.reflections_file.write_text(content, encoding="utf-8")
 
+    def read_user_profile(self) -> str:
+        if self.user_file.exists():
+            return self.user_file.read_text(encoding="utf-8")
+        return ""
+
+    def write_user_profile(self, content: str) -> None:
+        self.user_file.write_text(content, encoding="utf-8")
+
     def save_conversation_history(self, history: List[Dict[str, str]]) -> None:
         self.conversation_history_file.parent.mkdir(parents=True, exist_ok=True)
         with open(self.conversation_history_file, "w", encoding="utf-8") as file_obj:
@@ -159,6 +169,7 @@ def build_file_memory_provider(
                 long_term_memory_file=agent_config.long_term_memory_file,
                 conversation_history_file=agent_config.conversation_history_file,
                 reflections_file=agent_config.reflections_file,
+                user_file=agent_config.agent_dir / "USER.md",
             )
 
     if base_dir is not None:
@@ -174,4 +185,5 @@ def build_file_memory_provider(
         long_term_memory_file=resolved_base / "MEMORY.md",
         conversation_history_file=memory_dir / "conversation_history.json",
         reflections_file=resolved_base / "REFLECTIONS.md",
+        user_file=resolved_base / "USER.md",
     )

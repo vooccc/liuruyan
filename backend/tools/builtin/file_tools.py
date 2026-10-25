@@ -64,6 +64,13 @@ _IMAGE_INLINE_WARN_BYTES = 1 * 1024 * 1024
 # 避免 base64 爆 token。超限时 native 路径拒、text 路径放行（抽文本）。
 _PDF_INLINE_MAX_BYTES = 5 * 1024 * 1024
 
+# 扫描版 PDF 图片兜底上限（2026-10-25）：text 路径抽不到文本时，把每页内嵌图
+# 抽出降采样重编码成 image blocks inline 给 vision 模型读（对齐 Claude native
+# 能力，泛化到任意视觉模型）。页数上限防"整本扫描书"爆上下文；长边上限控制
+# 单页 base64 体积（各 vision API 内部也会再压到 ~1500-2000px，提前压省 token）。
+_PDF_SCANNED_INLINE_MAX_PAGES = 10
+_PDF_SCANNED_IMAGE_LONG_EDGE = 2000
+
 
 # ============================================================================
 # 简化的本地终端环境
@@ -437,12 +444,14 @@ def _read_image_as_blocks(orig_path: str, resolved: Path) -> str:
 # PDF 读取（2026-05-12 P3 方案 + Q1/Q2 升级）
 # ============================================================================
 #
-# 双路径设计（P3）：
+# 双路径设计（P3）+ 扫描兜底（2026-10-25）：
 # - native：Anthropic 原生路径（_provider_supports_pdf_native_var=True）→
 #   PDF base64 打包成 document block 给 Claude 自己解，质量最高。
 # - text：OpenAI / 伪 Anthropic 反代 → pypdf / pdfplumber 抽文本 → cat -n 格式，
-#   所有 provider 都能消费。扫描版 PDF 这条路抽不到文本 → 友好错误引导切
-#   Claude（native 路径靠 Claude 视觉才能读）或本地 ocrmypdf。本地 OCR 引擎不打包。
+#   所有 provider 都能消费。扫描版 PDF 抽不到文本 → 图片兜底：每页内嵌图抽出
+#   降采样重编码成 image blocks，vision 模型直接读（不限 Claude；非 vision 模型
+#   由 llm_client 降级为文字占位，不会 400）。抽不出图（如空白页 PDF）或缺依赖
+#   → 友好错误引导切 vision 模型或本地 ocrmypdf。本地 OCR 引擎不打包。
 #
 # 可选参数（Q1/Q2 升级，2026-05-12）：
 # - pages: list[int]（1-indexed）→ 只读指定页。pypdf/pdfplumber 路径过滤；
@@ -604,7 +613,9 @@ def _read_pdf_text(
     """非 Anthropic 路径：pypdf / pdfplumber 抽文本 → cat -n 格式。
 
     复用 read_file_tool 的 offset/limit 语义：PDF 全文抽出按行切。
-    扫描版 PDF（抽不到文本）→ 友好提示引导切 Claude / 本地 ocrmypdf（不打包本地 OCR 引擎）。
+    扫描版 PDF（抽不到文本）→ 图片兜底（2026-10-25）：每页内嵌图 inline 成
+    image blocks 给 vision 模型读；抽不出图时友好提示引导切 vision 模型 /
+    本地 ocrmypdf（不打包本地 OCR 引擎）。
     加密 PDF → 拒（不支持密码）。
     单页解析失败不会让整个 PDF 报错——该页插入 [Page X: extraction failed: ...] 占位。
 
@@ -642,6 +653,14 @@ def _read_pdf_text(
 
     # 扫描版 PDF：抽不到任何文本（不管哪个 extractor）
     if not full_text.strip() or _is_scanned_pdf_text(full_text):
+        # 图片兜底（2026-10-25）：每页内嵌图 inline 成 image blocks，vision 模型
+        # 直接读（对齐 Claude native 能力，泛化到任意视觉模型）。抽不出图 /
+        # 缺依赖 → 返 None → 保留下方原友好错误
+        scanned_resp = _read_pdf_scanned_images(
+            orig_path, resolved, pages_normalized, n_pages
+        )
+        if scanned_resp is not None:
+            return scanned_resp
         return json.dumps({
             "error": (
                 f"PDF '{orig_path}' appears to be scanned (image-only, no extractable text "
@@ -684,6 +703,154 @@ def _is_scanned_pdf_text(full_text: str) -> bool:
             continue
         cleaned_lines.append(stripped)
     return not cleaned_lines
+
+
+def _read_pdf_scanned_images(
+    orig_path: str,
+    resolved: Path,
+    pages: Optional[List[int]],
+    n_pages: int,
+) -> Optional[str]:
+    """扫描版 PDF 图片兜底（2026-10-25）：抽出每页内嵌图 → 降采样重编码 → image blocks。
+
+    _read_pdf_text 确认抽不到文本后调用。pypdf 解码每页内嵌的扫描图
+    （JPEG / CCITT / Flate），长边降采样到 _PDF_SCANNED_IMAGE_LONG_EDGE、
+    JPEG q85 重编码后 base64 inline，返回协议与 _read_image_as_blocks 一致
+    （llm_client 检测 _content_blocks 标记位，按模型 vision 能力透传 image
+    block 或降级为文字占位——非 vision 模型不会 400）。
+
+    pages 在这条路是真过滤（跟 native 路径的 hint 语义不同）：只 inline 指定页。
+    页数超过 _PDF_SCANNED_INLINE_MAX_PAGES 时截断 + hint 引导 pages 续读。
+
+    返回 None 表示兜底不适用（缺依赖 / 加密 / 一页图都抽不出），
+    调用方回退到原"scanned"友好错误。
+    """
+    import base64 as _b64
+    import io as _io
+
+    try:
+        from pypdf import PdfReader
+        from PIL import Image
+    except ImportError:
+        return None
+
+    try:
+        reader = PdfReader(str(resolved))
+        if reader.is_encrypted:
+            return None
+        total = len(reader.pages)
+        invalid_pages: List[int] = []
+        if pages:
+            target_indices = [p - 1 for p in pages if 1 <= p <= total]
+            invalid_pages = [p for p in pages if p < 1 or p > total]
+        else:
+            target_indices = list(range(total))
+
+        blocks: List[dict] = []
+        inlined_pages: List[int] = []
+        failed_pages: List[int] = []
+        truncated = False
+
+        for idx in target_indices:
+            if len(inlined_pages) >= _PDF_SCANNED_INLINE_MAX_PAGES:
+                truncated = True
+                break
+            page_no = idx + 1
+            try:
+                images = list(reader.pages[idx].images)
+            except Exception:
+                images = []
+            page_inlined = False
+            for im in images:
+                try:
+                    pil_img = im.image
+                    if pil_img is None:
+                        continue
+                    if pil_img.mode != "RGB":
+                        pil_img = pil_img.convert("RGB")
+                    w, h = pil_img.size
+                    scale = _PDF_SCANNED_IMAGE_LONG_EDGE / max(w, h)
+                    if scale < 1:
+                        pil_img = pil_img.resize(
+                            (max(1, round(w * scale)), max(1, round(h * scale))),
+                            Image.Resampling.LANCZOS,
+                        )
+                    buf = _io.BytesIO()
+                    pil_img.save(buf, format="JPEG", quality=85)
+                    data = buf.getvalue()
+                except Exception:
+                    # 单张图解码失败（如 JBIG2 等不支持 filter）跳过，不让整份失败
+                    continue
+                if not page_inlined:
+                    blocks.append(
+                        {"type": "text", "text": f"[Page {page_no} of scanned PDF]"}
+                    )
+                    page_inlined = True
+                blocks.append({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/jpeg",
+                        "data": _b64.b64encode(data).decode("ascii"),
+                    },
+                })
+            if page_inlined:
+                inlined_pages.append(page_no)
+            else:
+                failed_pages.append(page_no)
+
+        if not inlined_pages:
+            return None
+
+        if len(inlined_pages) > 1:
+            inlined_desc = f"pages {inlined_pages[0]}-{inlined_pages[-1]}"
+        else:
+            inlined_desc = f"page {inlined_pages[0]}"
+        summary_text = (
+            f"Scanned PDF attachment: {resolved} (image-only, no extractable text; "
+            f"{n_pages} pages total). Inlined {inlined_desc} as page images "
+            f"(JPEG, long edge <= {_PDF_SCANNED_IMAGE_LONG_EDGE}px)."
+        )
+        if truncated:
+            summary_text += (
+                f" Page cap reached ({_PDF_SCANNED_INLINE_MAX_PAGES} pages); "
+                f"remaining pages skipped — use pages=[...] to read them."
+            )
+        if failed_pages:
+            summary_text += f" No inlineable image found on page(s): {failed_pages}."
+        # 措辞规则同 _read_image_as_blocks：不写"你能看见"。OpenAI 协议下非 vision
+        # 模型会收到降级占位符，模型应据此引导用户换模型或本地 OCR
+        summary_text += (
+            " If these images are not visible to you, tell the user to switch to a "
+            "vision-capable model or OCR the PDF locally first."
+        )
+
+        meta: Dict[str, object] = {
+            "path": str(resolved),
+            "n_pages": n_pages,
+            "scanned": True,
+            "route": "scanned_images",
+            "pages_inlined": inlined_pages,
+        }
+        if truncated:
+            meta["truncated"] = True
+        if failed_pages:
+            meta["failed_pages"] = failed_pages
+        if pages:
+            meta["pages_filter"] = list(pages)
+            if invalid_pages:
+                meta["invalid_pages"] = invalid_pages
+
+        return json.dumps({
+            "_content_blocks": [{"type": "text", "text": summary_text}] + blocks,
+            "_meta": meta,
+        }, ensure_ascii=False)
+    except Exception as e:
+        logger.warning(
+            "[read_file:pdf-scanned] image fallback failed path=%s err=%s",
+            str(resolved), e,
+        )
+        return None
 
 
 def _extract_pdf_with_pypdf(
