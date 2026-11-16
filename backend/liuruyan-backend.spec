@@ -4,6 +4,7 @@ import platform as _platform
 import sys as _sys
 from PyInstaller.utils.hooks import collect_data_files
 from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_dynamic_libs
 
 _spec_dir = os.path.dirname(os.path.abspath(SPEC)) if 'SPEC' in dir() else os.path.dirname(os.path.abspath(__file__)) if '__file__' in dir() else os.path.abspath('.')
 _project_root = os.path.abspath(os.path.join(_spec_dir, '..'))
@@ -102,6 +103,18 @@ hiddenimports += collect_submodules('liuruyan')
 hiddenimports += collect_submodules('acp')
 hiddenimports += collect_submodules('backend.acp')
 
+# 流式语音本地引擎（backend/voice_stream/providers/local.py）相关依赖兜底：
+# - numpy 被 local.py 顶层 import 收进包，但实测 numpy 2.x 有子模块漏收
+#   （运行时缺 numpy._core._exceptions 直接崩，见 ~/.liuruyan/backend_crash.log），
+#   全量收子模块杜绝残缺包；
+# - sherpa_onnx 全是函数体内 lazy import，PyInstaller 静态分析抓不到，
+#   必须显式收集子模块 + 二进制扩展（_sherpa_onnx.pyd 及其依赖 dll）。
+hiddenimports += collect_submodules('numpy')
+hiddenimports += collect_submodules('sherpa_onnx')
+hiddenimports += ['sherpa_onnx._sherpa_onnx']
+binaries = []
+binaries += collect_dynamic_libs('sherpa_onnx')
+
 # 将 packages/harness 完整目录打入 backend/packages/harness，保障资源与动态加载
 if os.path.isdir(_harness_path):
     datas += [(_harness_path, 'backend/packages/harness')]
@@ -110,7 +123,7 @@ if os.path.isdir(_harness_path):
 a = Analysis(
     [_entry],
     pathex=_pathex,
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
