@@ -261,11 +261,43 @@ export default function NamespaceProjectsView({ agentId }: NamespaceProjectsView
                 )}
               </h3>
               <div className="edit-actions" style={{ gap: 6 }}>
-                {selection.kind === 'project' && timeline.length > 0 && (
-                  <button className="text-btn" onClick={() => setShowTimeline(v => !v)} title="事件溯源（append-only 事实之源）">
-                    <History size={12} style={{ display: 'inline', marginRight: 3, verticalAlign: '-1px' }} />
-                    {showTimeline ? '卡片' : `溯源 ${timeline.length}`}
-                  </button>
+                {selection.kind === 'project' && (
+                  <div style={{ display: 'inline-flex', alignItems: 'center', background: 'var(--bg-tertiary, rgba(255,255,255,0.06))', borderRadius: 6, padding: 2, marginRight: 4 }}>
+                    <button
+                      className="text-btn"
+                      style={{
+                        padding: '3px 8px',
+                        fontSize: 12,
+                        borderRadius: 4,
+                        background: !showTimeline ? 'var(--primary, #3b82f6)' : 'transparent',
+                        color: !showTimeline ? '#fff' : 'var(--text-muted, #94a3b8)',
+                        fontWeight: !showTimeline ? 600 : 400,
+                        boxShadow: !showTimeline ? '0 1px 3px rgba(0,0,0,0.2)' : 'none',
+                      }}
+                      onClick={() => setShowTimeline(false)}
+                      title="查看/编辑当前项目状态卡 (FACTS.md)"
+                    >
+                      <FolderKanban size={12} style={{ display: 'inline', marginRight: 4, verticalAlign: '-1px' }} />
+                      状态卡
+                    </button>
+                    <button
+                      className="text-btn"
+                      style={{
+                        padding: '3px 8px',
+                        fontSize: 12,
+                        borderRadius: 4,
+                        background: showTimeline ? 'var(--primary, #3b82f6)' : 'transparent',
+                        color: showTimeline ? '#fff' : 'var(--text-muted, #94a3b8)',
+                        fontWeight: showTimeline ? 600 : 400,
+                        boxShadow: showTimeline ? '0 1px 3px rgba(0,0,0,0.2)' : 'none',
+                      }}
+                      onClick={() => setShowTimeline(true)}
+                      title="查看 append-only 历史时间线 (timeline.jsonl)"
+                    >
+                      <History size={12} style={{ display: 'inline', marginRight: 4, verticalAlign: '-1px' }} />
+                      溯源 {timeline.length}
+                    </button>
+                  </div>
                 )}
                 {!editing ? (
                   <button className="text-btn" onClick={() => { setEditContent(detailCard); setEditing(true) }}>编辑</button>

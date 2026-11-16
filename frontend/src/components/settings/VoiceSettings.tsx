@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   AlertCircle,
+  AudioWaveform,
   ArrowRight,
   CheckCircle2,
   ChevronDown,
@@ -12,20 +13,13 @@ import {
   Globe,
   Languages,
   Loader2,
-  Mic,
   RefreshCw,
   Search,
   ShieldCheck,
   Sparkles,
   Volume2,
 } from 'lucide-react'
-import {
-  getVoiceConfig,
-  updateVoiceConfig,
-  type LocalWhisperSize,
-  type VoiceConfig,
-  type VoiceConfigResponse,
-} from '../../api/voice'
+import VoiceStreamSettingsPane from '../../voice/VoiceStreamSettingsPane'
 import {
   getSearchSettings,
   updateSearchSettings,
@@ -36,37 +30,33 @@ import AuxModelsFooter from './AuxModelsFooter'
 import TTSPane from './TTSPane'
 import FastContextPane from './FastContextPane'
 
-const LOCAL_MODEL_OPTIONS: Array<{ value: LocalWhisperSize; label: string; size: string; note: string }> = [
-  { value: 'tiny', label: 'tiny', size: '~75MB', note: '速度最快，准度低，适合英文' },
-  { value: 'base', label: 'base', size: '~145MB', note: '中文够用，准度中等' },
-  { value: 'small', label: 'small', size: '~245MB', note: 'CPU 推荐，中文准度良好' },
-  { value: 'medium', label: 'medium', size: '~770MB', note: '建议 8GB+ 内存或 GPU' },
-  { value: 'large-v3', label: 'large-v3', size: '~1.5GB', note: '需 GPU 或 16GB+ 内存，最准' },
-]
-
 /**
  * 设置 →「辅助功能」tab（原「语音输入」，2026-05-27 改名）。
  *
  * 二级侧栏结构：
  *   - 翻译（思考块翻译模型，未来扩展话题命名 / 记忆压缩等辅助 LLM 任务）
- *   - 语音转写（disabled / whisper_api / local_whisper 三引擎切换）
+ *   - 流式语音（唯一的语音输入入口：云端 DashScope / 本地 SenseVoice，voice 孤岛模块）
  *   - 语音输出（2026-05-29 加：TTS，对应 backend/tts/，零污染挂载）
  *
  * 子 tab 选择持久化到 localStorage（key=`lr:settings-aux-subtab`）。
- * 三个 pane 各自独立加载数据，懒加载——点开"辅助功能"不会立即拉语音配置。
+ * 各 pane 独立加载数据，懒加载——点开"辅助功能"不会立即拉各配置。
  *
- * 语音保存策略：每次修改立即 PUT 到后端（无 dirty/save 双态）。后端写完后 dispatch
- * 'voice-config-updated' 自定义事件，让 Chat.tsx 重拉配置 → 麦克风按钮即时显隐。
+ * 保存策略：每次修改立即 PUT 到后端（无 dirty/save 双态）。后端写完后 dispatch
+ * 'voice-config-updated' 自定义事件，让相关组件重拉配置即时生效。
  *
  * 历史：
  *   - 辅助模型原本挂在「模型服务」tab 底部，2026-05-27 跟语音并到这里，
  *     主因「模型服务」tab 已经够长，且辅助模型属于「跨场景小工具配置」语义上跟
- *     语音转写更接近。改造为二级侧栏（同日）方便后续扩展更多辅助功能。
- *   - 2026-05-29 加 TTS 子标签：与语音转写形成完整"耳朵 + 嘴"闭环。
+ *     语音更接近。改造为二级侧栏（同日）方便后续扩展更多辅助功能。
+ *   - 2026-05-29 加 TTS 子标签：与语音形成完整"耳朵 + 嘴"闭环。
  *     设计文档：docs/architecture_spec.md
+ *   - 2026-11-15 加「流式语音」子标签：voice 孤岛模块（frontend/src/voice/）的
+ *     设置面板，本文件只做 3 处接线（import / SUB_TABS / render），删模块时还原。
+ *   - 2026-11-15 拆除「语音转写」子标签（批量转写被流式语音全面替代，
+ *     后端 voice_transcription 包同步删除）；本文件不再引用 api/voice。
  */
 
-type AuxSubTab = 'translate' | 'voice' | 'tts' | 'search' | 'fast_context'
+type AuxSubTab = 'translate' | 'voice_stream' | 'tts' | 'search' | 'fast_context'
 const AUX_SUBTAB_KEY = 'lr:settings-aux-subtab'
 
 interface SubTabDef {
@@ -84,10 +74,10 @@ const SUB_TABS: SubTabDef[] = [
     desc: '思考块翻译模型（未来还会有话题命名 / 记忆压缩等）',
   },
   {
-    id: 'voice',
-    label: '语音转写',
-    icon: <Mic size={16} />,
-    desc: '麦克风录音 + Whisper 转文字（云端 / 本地）',
+    id: 'voice_stream',
+    label: '流式语音',
+    icon: <AudioWaveform size={16} />,
+    desc: '边说边出字：云端 DashScope 或本地 SenseVoice（免 key），唯一的语音输入入口',
   },
   {
     id: 'tts',
@@ -114,8 +104,8 @@ export default function VoiceSettings() {
     try {
       const saved = localStorage.getItem(AUX_SUBTAB_KEY)
       if (
-        saved === 'voice' ||
         saved === 'translate' ||
+        saved === 'voice_stream' ||
         saved === 'tts' ||
         saved === 'search' ||
         saved === 'fast_context'
@@ -150,7 +140,7 @@ export default function VoiceSettings() {
       </aside>
       <section className="aux-settings-pane" aria-label="辅助功能内容">
         {subTab === 'translate' && <TranslatePane />}
-        {subTab === 'voice' && <VoiceTranscriptionPane />}
+        {subTab === 'voice_stream' && <VoiceStreamSettingsPane />}
         {subTab === 'tts' && <TTSPane />}
         {subTab === 'search' && <SearchEnginePane />}
         {subTab === 'fast_context' && <FastContextPane />}
@@ -622,297 +612,3 @@ function SearchEnginePane() {
   )
 }
 
-
-/* ── 语音转写 pane ───────────────────────────────────────────── */
-
-function VoiceTranscriptionPane() {
-  const [data, setData] = useState<VoiceConfigResponse | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [loadErr, setLoadErr] = useState<string | null>(null)
-  const [saving, setSaving] = useState(false)
-  const [saveErr, setSaveErr] = useState<string | null>(null)
-
-  const refresh = useCallback(async () => {
-    setLoading(true)
-    setLoadErr(null)
-    try {
-      const result = await getVoiceConfig()
-      setData(result)
-    } catch (e) {
-      setLoadErr(e instanceof Error ? e.message : String(e))
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    void refresh()
-  }, [refresh])
-
-  const updateConfig = useCallback(
-    async (patch: Partial<VoiceConfig>) => {
-      if (!data) return
-      setSaving(true)
-      setSaveErr(null)
-      try {
-        const result = await updateVoiceConfig(patch)
-        setData((prev) => (prev ? { ...prev, config: result.config } : prev))
-        // 通知 Chat.tsx 重拉配置（麦克风按钮即时显隐）
-        window.dispatchEvent(new CustomEvent('voice-config-updated'))
-      } catch (e) {
-        setSaveErr(e instanceof Error ? e.message : String(e))
-      } finally {
-        setSaving(false)
-      }
-    },
-    [data],
-  )
-
-  if (loading) {
-    return (
-      <div style={{ padding: 24 }}>
-        <Loader2 size={16} className="spin" /> 加载语音配置…
-      </div>
-    )
-  }
-
-  if (loadErr || !data) {
-    return (
-      <div style={{ padding: 24, color: 'var(--accent-red)' }}>
-        <AlertCircle size={16} /> 加载失败：{loadErr ?? '未知错误'}
-        <button type="button" className="toolbar-action-btn" onClick={refresh} style={{ marginLeft: 12 }}>
-          重试
-        </button>
-      </div>
-    )
-  }
-
-  const { config, eligible_providers, local_whisper_status, recommended_models } = data
-  const validProviders = eligible_providers.filter((p) => p.has_api_key)
-
-  return (
-    <div className="voice-settings">
-      <header className="voice-settings-hero">
-        <div className="voice-settings-hero-icon">
-          <Mic size={20} />
-        </div>
-        <div className="voice-settings-hero-text">
-          <h2>语音转写</h2>
-          <p>
-            按住 <kbd>Ctrl + Shift + M</kbd> 或点击输入框右下角的麦克风开始录音；松开后自动转写到输入框。
-            支持云端 Whisper API（推荐国内 SiliconFlow）和完全离线的本地 Whisper。
-          </p>
-        </div>
-      </header>
-
-      <section className="voice-settings-section">
-        <h3>转写引擎</h3>
-        <div className="voice-radio-group">
-          <RadioCard
-            checked={config.provider_type === 'disabled'}
-            onChange={() => updateConfig({ provider_type: 'disabled' })}
-            title="关闭"
-            desc="输入框不显示麦克风按钮，快捷键也不生效"
-          />
-          <RadioCard
-            checked={config.provider_type === 'whisper_api'}
-            onChange={() => updateConfig({ provider_type: 'whisper_api' })}
-            title="Whisper API（推荐）"
-            desc="走 OpenAI 兼容端点。国内推荐 SiliconFlow（FunAudioLLM/SenseVoiceSmall），中文优化"
-          />
-          <RadioCard
-            checked={config.provider_type === 'local_whisper'}
-            onChange={() => updateConfig({ provider_type: 'local_whisper' })}
-            title="本地 Whisper"
-            desc="完全离线，零联网，零费用。需安装 ffmpeg + faster-whisper"
-          />
-        </div>
-      </section>
-
-      {config.provider_type === 'whisper_api' && (
-        <ApiPanel
-          config={config}
-          providers={validProviders}
-          recommendedModels={recommended_models}
-          onUpdate={updateConfig}
-          eligibleCount={eligible_providers.length}
-        />
-      )}
-
-      {config.provider_type === 'local_whisper' && (
-        <LocalPanel config={config} status={local_whisper_status} onUpdate={updateConfig} />
-      )}
-
-      <footer className="voice-settings-footer">
-        {saving ? (
-          <span className="voice-settings-status">
-            <Loader2 size={13} className="spin" /> 保存中…
-          </span>
-        ) : saveErr ? (
-          <span className="voice-settings-status err">
-            <AlertCircle size={13} /> 保存失败：{saveErr}
-          </span>
-        ) : (
-          <span className="voice-settings-status ok">
-            <CheckCircle2 size={13} /> 已与服务端同步（修改即时生效）
-          </span>
-        )}
-      </footer>
-    </div>
-  )
-}
-
-/* ── 子组件 ──────────────────────────────────────────────────── */
-
-function RadioCard({
-  checked,
-  onChange,
-  title,
-  desc,
-}: {
-  checked: boolean
-  onChange: () => void
-  title: string
-  desc: string
-}) {
-  return (
-    <button type="button" className={`voice-radio-card ${checked ? 'checked' : ''}`} onClick={onChange}>
-      <span className="voice-radio-dot" aria-hidden>
-        {checked ? <span className="voice-radio-dot-inner" /> : null}
-      </span>
-      <span className="voice-radio-text">
-        <span className="voice-radio-title">{title}</span>
-        <span className="voice-radio-desc">{desc}</span>
-      </span>
-    </button>
-  )
-}
-
-function ApiPanel({
-  config,
-  providers,
-  recommendedModels,
-  onUpdate,
-  eligibleCount,
-}: {
-  config: VoiceConfig
-  providers: Array<{ id: string; name: string }>
-  recommendedModels: Record<string, string>
-  onUpdate: (patch: Partial<VoiceConfig>) => void
-  eligibleCount: number
-}) {
-  return (
-    <section className="voice-settings-section">
-      <h3>Provider</h3>
-      {providers.length === 0 ? (
-        <div className="voice-settings-warn">
-          <AlertCircle size={14} />
-          {eligibleCount === 0
-            ? '没有可用的 OpenAI 兼容 provider，请先到「模型服务」配置。'
-            : '没有 provider 配置了 API Key，请先到「模型服务」填写 Key。'}
-        </div>
-      ) : (
-        <select
-          className="voice-select"
-          value={config.provider_id}
-          onChange={(e) => {
-            const pid = e.target.value
-            // 切 provider 时自动填推荐模型；用户已手填则不覆盖
-            const recommended = recommendedModels[pid]
-            const patch: Partial<VoiceConfig> = { provider_id: pid }
-            if (!config.model && recommended) patch.model = recommended
-            onUpdate(patch)
-          }}
-        >
-          <option value="">请选择 provider…</option>
-          {providers.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-      )}
-
-      <h3 style={{ marginTop: 16 }}>模型</h3>
-      <input
-        className="voice-input"
-        type="text"
-        value={config.model}
-        onChange={(e) => onUpdate({ model: e.target.value })}
-        placeholder="例如：FunAudioLLM/SenseVoiceSmall"
-      />
-      <p className="voice-settings-hint">
-        推荐值：
-        <code>FunAudioLLM/SenseVoiceSmall</code>（SiliconFlow，中文优）·{' '}
-        <code>whisper-large-v3-turbo</code>（Groq，最快）·{' '}
-        <code>whisper-1</code>（OpenAI 官方）·{' '}
-        <code>paraformer-realtime-v2</code>（DashScope，中文最强）
-      </p>
-    </section>
-  )
-}
-
-function LocalPanel({
-  config,
-  status,
-  onUpdate,
-}: {
-  config: VoiceConfig
-  status: { available: boolean; ffmpeg_installed: boolean; faster_whisper_installed: boolean }
-  onUpdate: (patch: Partial<VoiceConfig>) => void
-}) {
-  return (
-    <section className="voice-settings-section">
-      <h3>模型大小</h3>
-      <div className="voice-radio-group">
-        {LOCAL_MODEL_OPTIONS.map((opt) => (
-          <RadioCard
-            key={opt.value}
-            checked={config.local_model_size === opt.value}
-            onChange={() => onUpdate({ local_model_size: opt.value })}
-            title={`${opt.label} · ${opt.size}`}
-            desc={opt.note}
-          />
-        ))}
-      </div>
-
-      <h3 style={{ marginTop: 16 }}>本地依赖</h3>
-      <ul className="voice-deps-list">
-        <li>
-          {status.ffmpeg_installed ? (
-            <CheckCircle2 size={14} style={{ color: 'var(--accent-green)' }} />
-          ) : (
-            <AlertCircle size={14} style={{ color: 'var(--accent-red)' }} />
-          )}
-          <span>ffmpeg（系统级，需在 PATH 中）</span>
-        </li>
-        <li>
-          {status.faster_whisper_installed ? (
-            <CheckCircle2 size={14} style={{ color: 'var(--accent-green)' }} />
-          ) : (
-            <AlertCircle size={14} style={{ color: 'var(--accent-red)' }} />
-          )}
-          <span>faster-whisper（Python 包）</span>
-        </li>
-      </ul>
-
-      {!status.available && (
-        <pre className="voice-deps-install">
-{`# Windows
-winget install ffmpeg
-pip install faster-whisper
-
-# macOS
-brew install ffmpeg
-pip install faster-whisper
-
-# Linux
-sudo apt install ffmpeg
-pip install faster-whisper
-
-# 装好后重启后端进程使其检测到`}
-        </pre>
-      )}
-    </section>
-  )
-}

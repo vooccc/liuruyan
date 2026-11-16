@@ -2783,9 +2783,13 @@ from backend.routes import providers_router as _providers_router
 app.include_router(_providers_router)
 
 
-# ----- 语音转写：POST /voice/transcribe + GET/PUT /voice/config ----------
-from backend.routes import voice_router as _voice_router
-app.include_router(_voice_router)
+# ----- 语音流式输入（voice_stream 孤立包）：WS /voice/stream/ws + GET /voice/stream/config
+# 零污染装配：删除本功能时还原此处 2 行 + 删 backend/voice_stream/ 目录 +
+# 前端 frontend/src/voice/ 目录 + 还原 ChatInputBottomToolbar.tsx 3 行接线即可。
+# 协议：DashScope realtime ASR（run-task → task-started → 二进制音频 → result-generated
+# → finish-task → task-finished），设计见 docs/architecture_spec.md
+from backend.voice_stream.routes import router as _voice_stream_router
+app.include_router(_voice_stream_router)
 
 
 # ----- 搜索引擎设置：GET/PUT /settings/search（Tavily key，柳如烟+内容模块共用）----

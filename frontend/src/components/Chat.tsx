@@ -13,8 +13,7 @@ import ChatInputTopToolbar from './ChatInputTopToolbar'
 import ChatInputBottomToolbar from './ChatInputBottomToolbar'
 import ChatInputComposer from './ChatInputComposer'
 import ChatAttachmentChips from './ChatAttachmentChips'
-import type { MicSpeechButtonRef } from './MicSpeechButton'
-import { getVoiceConfig, type VoiceProviderType } from '../api/voice'
+import type { VoiceStreamButtonRef } from '../voice'
 import { useToast } from './ToastSystem'
 import { useChatAttachments } from './useChatAttachments'
 import ChatTimeline from './ChatTimeline'
@@ -117,9 +116,9 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   // = 用户感知的"飘动"。改单锚点后视觉永远稳定贴底，跟 主流编辑器 侧栏范式一致。
   const [tasksInputAnchor, setTasksInputAnchor] = useState<HTMLDivElement | null>(null)
   const userScrolledUpRef = useRef(false)
-  // 语音输入：disabled 时按钮整体不渲染；其他状态都显示按钮（具体引擎走后端）
-  const [voiceProviderType, setVoiceProviderType] = useState<VoiceProviderType>('disabled')
-  const micButtonRef = useRef<MicSpeechButtonRef | null>(null)
+  // 语音输入：流式语音是唯一入口（旧批量转写已拆除）。按钮显隐由 voice 模块根据
+  // /voice/stream/config 的 available 自行决定（开关关 / 本地模型缺失 → 不渲染）。
+  const micButtonRef = useRef<VoiceStreamButtonRef | null>(null)
   const { addToast } = useToast()
   // per-session 索引：A session 在发送时不能锁住 B session 的输入。
   // key 用 sessionId；新建 session 前临时用空串作为占位 key（同一时刻只会有一条 pending）。
@@ -128,32 +127,38 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   const forceScrollToBottomRef = useRef(false)
   // 注：不需要程序滚动锁——ChatTimeline 用 scrollTop 单调性判定用户上滑，
   // 我们程序滚动总是向下推（scrollTop 增加），天然不会被误认为上滑。
-  // 启动时拉一次语音配置；后续设置页改完会触发自定义事件让我们重拉。
-  useEffect(() => {
-    let cancelled = false
-    const refresh = () => {
-      getVoiceConfig()
-        .then((data) => {
-          if (!cancelled) setVoiceProviderType(data.config.provider_type)
-        })
-        .catch(() => {
-          /* backend 未启 / 路由未装载，静默保持 disabled */
-        })
-    }
-    refresh()
-    const onUpdate = () => refresh()
-    window.addEventListener('voice-config-updated', onUpdate)
-    return () => {
-      cancelled = true
-      window.removeEventListener('voice-config-updated', onUpdate)
-    }
+  // 流式语音草稿：partial 实时写进输入框末尾（替换式渲染），final 落框前先撤掉。
+  // voiceDraftRef 记录当前草稿文本；撤草稿用 endsWith 校验，用户手动改动过则不误删。
+  const voiceDraftRef = useRef('')
+  // 撤草稿（final 落框 / 会话结束时调用）。ref 只在 updater 外读写，updater 内只读闭包 → 纯函数可重放。
+  const stripVoiceDraft = useCallback(() => {
+    const d = voiceDraftRef.current
+    voiceDraftRef.current = ''
+    if (d) setInput((prev) => (prev.endsWith(d) ? prev.slice(0, prev.length - d.length) : prev))
   }, [])
+  // partial → 替换输入框末尾草稿
+  const handleVoiceDraft = useCallback((partial: string | null) => {
+    if (partial === null) {
+      stripVoiceDraft()
+      return
+    }
+    const prevDraft = voiceDraftRef.current
+    voiceDraftRef.current = partial
+    setInput((prev) => {
+      const base = prevDraft && prev.endsWith(prevDraft) ? prev.slice(0, prev.length - prevDraft.length) : prev
+      return base + partial
+    })
+  }, [stripVoiceDraft])
 
-  // 语音转写结果：拼到 input 末尾，需要时补空格。不自动发送，让用户确认。
-  const handleVoiceTranscription = useCallback((text: string) => {
-    setInput((prev) => (prev ? (prev.endsWith(' ') ? prev + text : prev + ' ' + text) : text))
-    requestAnimationFrame(() => inputRef.current?.focus())
-  }, [])
+  // 语音转写结果（final 句 / 旧档整段）：撤掉草稿后拼到 input 末尾，需要时补空格。不自动发送，让用户确认。
+  const handleVoiceTranscription = useCallback(
+    (text: string) => {
+      stripVoiceDraft()
+      setInput((prev) => (prev ? (prev.endsWith(' ') ? prev + text : prev + ' ' + text) : text))
+      requestAnimationFrame(() => inputRef.current?.focus())
+    },
+    [stripVoiceDraft],
+  )
 
   const handleVoiceError = useCallback(
     (message: string) => {
@@ -985,9 +990,9 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
             onStop={handleStop}
             onSubmit={handleSubmit}
             onOpenGuardianDialog={handleOpenPermissions}
-            voiceEnabled={voiceProviderType !== 'disabled'}
             onVoiceTranscription={handleVoiceTranscription}
             onVoiceError={handleVoiceError}
+            onVoiceDraft={handleVoiceDraft}
             micButtonRef={micButtonRef}
           />
         )}

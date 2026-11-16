@@ -35,7 +35,6 @@ from .task_routes import router as task_router
 from .user_profile_routes import router as user_profile_router
 from .tts_routes import router as tts_router
 from .utility_routes import router as utility_router
-from .voice_routes import router as voice_router
 
 __all__ = [
     "agent_state_router",
@@ -66,5 +65,4 @@ __all__ = [
     "tts_router",
     "user_profile_router",
     "utility_router",
-    "voice_router",
 ]
