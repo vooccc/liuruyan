@@ -82,4 +82,29 @@ if (Test-Path $CargoTomlPath) {
     }
 }
 
+# 4. 双向无感联动：若同级存在私有主工程，同步更新主工程版本，防止下次导出覆盖重置
+$UpstreamDir = Join-Path (Split-Path -Parent $ProjectRoot) "柳如烟"
+if ((Test-Path $UpstreamDir) -and (Resolve-Path $UpstreamDir).Path -ne (Resolve-Path $ProjectRoot).Path) {
+    $UpstreamTauri = Join-Path $UpstreamDir "frontend\src-tauri\tauri.conf.json"
+    $UpstreamPkg = Join-Path $UpstreamDir "frontend\package.json"
+    $UpstreamCargo = Join-Path $UpstreamDir "frontend\src-tauri\Cargo.toml"
+
+    if (Test-Path $UpstreamTauri) {
+        $uContent = Get-Content $UpstreamTauri -Raw -Encoding UTF8
+        $uNewContent = $uContent -replace '"version"\s*:\s*"\d+\.\d+\.\d+"', "`"version`": `"$newVer`""
+        [System.IO.File]::WriteAllText($UpstreamTauri, $uNewContent, (New-Object System.Text.UTF8Encoding $false))
+    }
+    if (Test-Path $UpstreamPkg) {
+        $uPkg = Get-Content $UpstreamPkg -Raw -Encoding UTF8
+        $uNewPkg = $uPkg -replace '"version"\s*:\s*"\d+\.\d+\.\d+"', "`"version`": `"$newVer`""
+        [System.IO.File]::WriteAllText($UpstreamPkg, $uNewPkg, (New-Object System.Text.UTF8Encoding $false))
+    }
+    if (Test-Path $UpstreamCargo) {
+        $uCargo = Get-Content $UpstreamCargo -Raw -Encoding UTF8
+        $uNewCargo = $uCargo -replace '(?m)^version\s*=\s*"\d+\.\d+\.\d+"', "version = `"$newVer`""
+        [System.IO.File]::WriteAllText($UpstreamCargo, $uNewCargo, (New-Object System.Text.UTF8Encoding $false))
+    }
+    Write-Host "  [link] 已自动同步推进主工程版本: $newVer"
+}
+
 Write-Host "版本递增: $oldVer -> $newVer"
