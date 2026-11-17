@@ -16,7 +16,7 @@ export interface PcmChunk {
 export interface PcmStream {
   /** 每帧回调（100ms 一次）。 */
   onChunk: (chunk: PcmChunk) => void
-  /** 停止采集并释放麦克风 + AudioContext（尾巴 <100ms 丢弃，上游 finish 会 flush 文本）。 */
+  /** 停止采集并释放麦克风 + AudioContext（先发送不足 100ms 的尾帧）。 */
   stop: () => Promise<void>
 }
 
@@ -31,9 +31,17 @@ class PcmCaptureProcessor extends AudioWorkletProcessor {
     this._phase = 0      // 重采样游标（相对本帧 buf[0]，取值 [0, ratio)）
     this._prevTail = 0   // 上一帧最后一个样本（跨帧插值用）
     this._out = []       // 待打包的 16k 输出样本
+    this._stopped = false
+    this.port.onmessage = ({ data }) => {
+      if (data.type !== 'stop') return
+      this._stopped = true
+      this._flush(true)
+      this.port.postMessage({ type: 'stopped' })
+    }
   }
 
   process(inputs) {
+    if (this._stopped) return false
     const input = inputs[0]
     if (!input || input.length === 0 || !input[0]) return true
     const ch = input[0]
@@ -65,18 +73,19 @@ class PcmCaptureProcessor extends AudioWorkletProcessor {
     this._out.push(s)
   }
 
-  _flush() {
-    if (this._out.length < ${CHUNK_SAMPLES}) return
+  _flush(final = false) {
+    const count = final ? this._out.length : ${CHUNK_SAMPLES}
+    if (!count || this._out.length < count) return
     let sumSq = 0
-    const pcm = new Int16Array(${CHUNK_SAMPLES})
-    for (let i = 0; i < ${CHUNK_SAMPLES}; i++) {
+    const pcm = new Int16Array(count)
+    for (let i = 0; i < count; i++) {
       let s = this._out[i]
       if (s > 1) s = 1; else if (s < -1) s = -1
       sumSq += s * s
       pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff
     }
-    this._out = this._out.slice(${CHUNK_SAMPLES})
-    const rms = Math.sqrt(sumSq / ${CHUNK_SAMPLES})
+    this._out = this._out.slice(count)
+    const rms = Math.sqrt(sumSq / count)
     this.port.postMessage({ pcm: pcm, level: rms }, [pcm.buffer])
   }
 }
@@ -109,35 +118,64 @@ export async function startPcmCapture(
     },
   })
 
-  const ctx = new AudioContext()
-  try {
-    await ensureWorklet(ctx)
-  } catch (e) {
-    media.getTracks().forEach((t) => t.stop())
-    await ctx.close().catch(() => undefined)
-    throw e
-  }
-
-  const source = ctx.createMediaStreamSource(media)
-  const node = new AudioWorkletNode(ctx, 'voice-pcm-capture')
-  node.port.onmessage = (ev: MessageEvent<PcmChunk>) => onChunk(ev.data)
-  source.connect(node)
-  // 不连 destination：不经扬声器回放
-
-  let stopped = false
-  const stop = async () => {
-    if (stopped) return
-    stopped = true
-    try {
-      node.port.onmessage = null
-      node.disconnect()
-      source.disconnect()
-      media.getTracks().forEach((t) => t.stop())
-      await ctx.close().catch(() => undefined)
-    } catch {
-      /* ignore */
+  let ctx: AudioContext | undefined
+  let source: MediaStreamAudioSourceNode | undefined
+  let node: AudioWorkletNode | undefined
+  const cleanup = async () => {
+    const errors: unknown[] = []
+    for (const track of media.getTracks()) {
+      try { track.stop() } catch (error) { errors.push(error) }
     }
+    if (node) node.port.onmessage = null
+    try { node?.disconnect() } catch (error) { errors.push(error) }
+    try { source?.disconnect() } catch (error) { errors.push(error) }
+    try {
+      if (ctx && ctx.state !== 'closed') await ctx.close()
+    } catch (error) { errors.push(error) }
+    if (errors.length) throw errors[0]
   }
 
-  return { onChunk, stop }
+  try {
+    ctx = new AudioContext()
+    await ensureWorklet(ctx)
+    await ctx.resume()
+    source = ctx.createMediaStreamSource(media)
+    const captureNode = new AudioWorkletNode(ctx, 'voice-pcm-capture')
+    node = captureNode
+    let acknowledgeStop: (() => void) | undefined
+    captureNode.port.onmessage = (ev: MessageEvent<PcmChunk | { type: 'stopped' }>) => {
+      if ('type' in ev.data) acknowledgeStop?.()
+      else onChunk(ev.data)
+    }
+    source.connect(captureNode)
+
+    let stopPromise: Promise<void> | undefined
+    const stop = (): Promise<void> => {
+      if (stopPromise) return stopPromise
+      stopPromise = (async () => {
+        try {
+          await new Promise<void>((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error('语音尾帧收取超时')), 1000)
+            acknowledgeStop = () => {
+              clearTimeout(timer)
+              resolve()
+            }
+            try {
+              captureNode.port.postMessage({ type: 'stop' })
+            } catch (error) {
+              clearTimeout(timer)
+              reject(error)
+            }
+          })
+        } finally {
+          await cleanup()
+        }
+      })()
+      return stopPromise
+    }
+    return { onChunk, stop }
+  } catch (error) {
+    await cleanup().catch((cleanupError) => console.warn('voice capture cleanup failed', cleanupError))
+    throw error
+  }
 }

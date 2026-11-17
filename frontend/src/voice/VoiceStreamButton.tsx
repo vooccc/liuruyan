@@ -19,7 +19,7 @@ interface VoiceStreamButtonProps {
   /** 录音上限秒数（/voice/stream/config 下发，默认 600）。 */
   maxSeconds?: number
   /** 草稿回调：partial 实时写进输入框（见 useVoiceStream 头注释）。 */
-  onDraftChange?: (draft: string | null) => void
+  onDraftChange?: (draft: string | null, preserve?: boolean) => void
   /** 成稿回调：第 index 句的加工结果（规则替换/LLM 润色），无感替换原稿。 */
   onPolished?: (index: number, text: string) => void
 }
@@ -37,7 +37,7 @@ function RecordingWaves() {
 
 const VoiceStreamButton = forwardRef<VoiceStreamButtonRef, VoiceStreamButtonProps>(
   ({ disabled, onTranscription, onError, maxSeconds = 600, onDraftChange, onPolished }, ref) => {
-    const { phase, level, toggle } = useVoiceStream({
+    const { phase, level, toggle, cancel } = useVoiceStream({
       onTranscription,
       onError,
       maxSeconds,
@@ -51,21 +51,22 @@ const VoiceStreamButton = forwardRef<VoiceStreamButtonRef, VoiceStreamButtonProp
     useImperativeHandle(
       ref,
       () => ({
-        toggleRecording: () => toggle(),
+        toggleRecording: () => { if (!disabled || phaseRef.current !== 'idle') toggle() },
+        cancelRecording: cancel,
         isRecording: () => phaseRef.current === 'recording',
         isLoading: () =>
           phaseRef.current === 'connecting' || phaseRef.current === 'finishing',
       }),
-      [toggle],
+      [toggle, cancel, disabled],
     )
 
     const busy = phase === 'connecting' || phase === 'finishing'
-    const isDisabled = disabled || busy
+    const isDisabled = disabled && phase === 'idle'
     const title =
       busy
         ? phase === 'connecting'
-          ? '连接语音服务…'
-          : '等待最终结果…'
+          ? '连接语音服务… 点击取消'
+          : '等待最终结果… 点击取消'
         : phase === 'recording'
           ? '点击停止 · Esc 取消'
           : '流式语音输入 (Ctrl+Shift+M)'

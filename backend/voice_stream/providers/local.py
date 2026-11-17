@@ -231,6 +231,13 @@ class LocalSenseVoiceProvider(RealtimeProvider):
     async def finish(self) -> None:
         if self._engine is None or self._closed:
             return
+        if self._vad is not None:
+            self._vad.flush()
+            while not self._vad.empty:
+                segment = self._vad.front
+                self._vad.pop()
+                self._reset_segment()
+                await self._recognize_segment(np.asarray(segment.samples, dtype=np.float32))
         # 1) 段内残余（VAD 还没判定静音）：裁掉静音尾巴后不足最短语音则丢弃
         if self._speech:
             full = np.concatenate(self._speech)

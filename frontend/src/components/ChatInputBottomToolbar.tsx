@@ -38,7 +38,7 @@ interface ChatInputBottomToolbarProps {
   /** 错误回调：拒权限 / 转写失败等。建议接到 toast。 */
   onVoiceError?: (message: string) => void
   /** 流式语音草稿回调（partial 实时进 textarea，替换式）。仅流式档有，可缺省。 */
-  onVoiceDraft?: (draft: string | null) => void
+  onVoiceDraft?: (draft: string | null, preserve?: boolean) => void
   /** 成稿回调：第 index 句的加工结果（规则替换/LLM 润色），无感替换原稿。 */
   onVoicePolished?: (index: number, text: string) => void
   /** 暴露 ref 给外层用 Ctrl+Shift+M 全局快捷键调用 toggleRecording。

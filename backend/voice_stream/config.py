@@ -158,7 +158,6 @@ def stream_status() -> Dict[str, Any]:
         reason = "" if cfg.enabled else "voice_stream disabled"
     elif cfg.provider_id == "local":
         has_key = True
-        local = local_model_status(cfg)
         model_ready = bool(local["ready"])
         available = cfg.enabled and model_ready
         if not cfg.enabled:

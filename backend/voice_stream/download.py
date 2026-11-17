@@ -29,6 +29,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from .config import load_voice_stream_config
 from .providers.local import default_local_model_dir
 
 # ── 下载源定义 ────────────────────────────────────────────────────────
@@ -113,7 +114,9 @@ def start_model_download() -> bool:
             error="",
             started_at=time.time(),
         )
-        _thread = threading.Thread(target=_worker, name="voice-stream-model-dl", daemon=True)
+        cfg = load_voice_stream_config()
+        target_dir = Path(cfg.local_model_dir) if cfg.local_model_dir else default_local_model_dir()
+        _thread = threading.Thread(target=_worker, args=(target_dir,), name="voice-stream-model-dl", daemon=True)
         _thread.start()
         return True
 
@@ -137,14 +140,16 @@ def _fetch(url: str, dest: Path, min_bytes: int, on_progress: Any) -> None:
                 f.write(chunk)
                 downloaded += len(chunk)
                 on_progress(downloaded, total)
+    if total and downloaded != total:
+        part.unlink(missing_ok=True)
+        raise ValueError(f"downloaded {downloaded} bytes != content-length {total}")
     if downloaded < min_bytes:
         part.unlink(missing_ok=True)
         raise ValueError(f"downloaded {downloaded} bytes < min {min_bytes}")
     shutil.move(str(part), str(dest))
 
 
-def _worker() -> None:
-    target_dir = default_local_model_dir()
+def _worker(target_dir: Path) -> None:
     try:
         target_dir.mkdir(parents=True, exist_ok=True)
         for i, spec in enumerate(_FILES):
@@ -157,7 +162,7 @@ def _worker() -> None:
             last_err: Optional[Exception] = None
             for url in spec["urls"]:
                 try:
-                    _fetch(url, dest, spec["min_bytes"], lambda d, t: _set(downloaded=d, total=t))
+                    _fetch(url, dest, spec["min_bytes"], lambda d, t: _set(downloaded=d, total=t, percent=min(100, int(d * 100 / t)) if t else -1))
                     last_err = None
                     break
                 except Exception as e:  # noqa: BLE001 逐源回退

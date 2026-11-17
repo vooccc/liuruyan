@@ -26,6 +26,7 @@ agent-client-protocol>=0.1.0  # ACP (Agent Client Protocol) SDK：外部智能�
 multidict==6.7.1
 nbformat==5.10.4
 numpy>=1.26,<3.0  # embedding 长期记忆向量索引（@d:\AI_Project\柳如烟\backend\embedding_index.py）；纯 numpy 实现余弦相似度，N<10K 时 <5ms，不引 chromadb/faiss 重依赖
+sherpa-onnx>=1.12,<3.0
 openai==2.31.0
 packaging==26.1
 parso==0.8.6

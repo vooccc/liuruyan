@@ -233,13 +233,18 @@ class VoiceStreamSession:
             await self._forward({"type": "polished", "index": index, "text": local})
 
     async def _drain_polish(self) -> None:
-        pending = [t for t in self._polish_tasks if not t.done()]
-        if pending:
-            try:
+        tasks = list(self._polish_tasks)
+        try:
+            pending = [task for task in tasks if not task.done()]
+            if pending:
                 await asyncio.wait(pending, timeout=_POLISH_DRAIN_TIMEOUT)
-            except Exception:
-                pass
-        self._polish_tasks.clear()
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
+            self._polish_tasks.clear()
 
     async def _forward(self, ev: dict) -> None:
         try:
@@ -254,6 +259,12 @@ class VoiceStreamSession:
     # ── 清理 ──────────────────────────────────────────────
 
     async def _teardown(self) -> None:
+        tasks, self._polish_tasks = self._polish_tasks, []
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
         if self._provider is not None:
             try:
                 await self._provider.close()

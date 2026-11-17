@@ -17,6 +17,7 @@ export interface VoiceStreamClientCallbacks {
 export class VoiceStreamClient {
   private _ws: WebSocket | null = null
   private _closed = false
+  private _rejectConnect: ((error: Error) => void) | null = null
 
   constructor(
     private readonly callbacks: VoiceStreamClientCallbacks,
@@ -34,7 +35,16 @@ export class VoiceStreamClient {
       ws.binaryType = 'arraybuffer'
       this._ws = ws
 
+      const timer = setTimeout(() => {
+        this.close()
+      }, 10000)
+      this._rejectConnect = (error) => {
+        clearTimeout(timer)
+        reject(error)
+      }
       const onOpen = () => {
+        clearTimeout(timer)
+        this._rejectConnect = null
         ws.removeEventListener('error', onError)
         ws.removeEventListener('open', onOpen)
         resolve()
@@ -42,14 +52,14 @@ export class VoiceStreamClient {
       const onError = () => {
         ws.removeEventListener('error', onError)
         ws.removeEventListener('open', onOpen)
-        reject(new Error(`voice stream ws connect failed: ${this.url}`))
+        this.close()
       }
       ws.addEventListener('open', onOpen, { once: false })
       ws.addEventListener('error', onError, { once: false })
       ws.addEventListener('message', this._onMessage)
       ws.addEventListener('close', () => {
         if (!this._closed) {
-          this._closed = true
+          this.close()
           this.callbacks.onError?.('voice stream connection closed')
         }
       })
@@ -80,6 +90,11 @@ export class VoiceStreamClient {
 
   sendAudio(pcm: Int16Array | ArrayBuffer) {
     if (this._ws && this._ws.readyState === WebSocket.OPEN) {
+      if (this._ws.bufferedAmount > 1024 * 1024) {
+        this.close()
+        this.callbacks.onError?.('语音发送积压，已停止录音，请检查网络后重试')
+        return
+      }
       this._ws.send(pcm as BufferSource)
     }
   }
@@ -94,6 +109,8 @@ export class VoiceStreamClient {
 
   close() {
     this._closed = true
+    this._rejectConnect?.(new Error('语音连接已关闭或连接超时'))
+    this._rejectConnect = null
     const ws = this._ws
     this._ws = null
     if (ws) {

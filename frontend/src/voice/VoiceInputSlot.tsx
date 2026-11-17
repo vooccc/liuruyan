@@ -17,7 +17,7 @@ interface VoiceInputSlotProps {
   onTranscription: (text: string, index?: number) => void
   onError?: (message: string) => void
   /** 草稿回调：partial 实时进输入框。 */
-  onDraftChange?: (draft: string | null) => void
+  onDraftChange?: (draft: string | null, preserve?: boolean) => void
   /** 成稿回调：第 index 句的加工结果，无感替换原稿。 */
   onPolished?: (index: number, text: string) => void
 }
@@ -53,6 +53,7 @@ const VoiceInputSlot = forwardRef<VoiceStreamButtonRef, VoiceInputSlotProps>(
       ref,
       () => ({
         toggleRecording,
+        cancelRecording: () => streamBtnRef.current?.cancelRecording?.(),
         isRecording: () => streamBtnRef.current?.isRecording() ?? false,
         isLoading: () => streamBtnRef.current?.isLoading() ?? false,
       }),

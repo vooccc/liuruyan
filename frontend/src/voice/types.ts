@@ -30,6 +30,7 @@ export type VoiceStreamClientControl =
 
 export interface VoiceStreamButtonRef {
   toggleRecording: () => void
+  cancelRecording: () => void
   isRecording: () => boolean
   isLoading: () => boolean
 }

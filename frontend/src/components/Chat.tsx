@@ -91,7 +91,13 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   const messages = useAppStore((state) => state.sessions[currentSession?.id || '']?.chatMessages ?? EMPTY_MESSAGES)
 
   const [timelineItems, setTimelineItems] = useState<ChatTimelineItem[]>([])
-  const [input, setInput] = useState('')
+  const [input, setInputState] = useState('')
+  const inputValueRef = useRef('')
+  const setInput = useCallback((value: React.SetStateAction<string>) => {
+    const next = typeof value === 'function' ? value(inputValueRef.current) : value
+    inputValueRef.current = next
+    setInputState(next)
+  }, [])
   const [isLoading, setIsLoading] = useState(false)
   const [showCommands, setShowCommands] = useState(false)
   // `.lry/workflows/` 列表懒加载：首次打开指令面板时 fetch 一次，失败静默（面板只是不显示这组）。
@@ -130,38 +136,54 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   // 流式语音草稿：partial 实时写进输入框末尾（替换式渲染），final 落框前先撤掉。
   // voiceDraftRef 记录当前草稿文本；撤草稿用 endsWith 校验，用户手动改动过则不误删。
   const voiceDraftRef = useRef('')
+  const voiceDraftBaseRef = useRef('')
+  const voiceDraftEditedRef = useRef(false)
   // 撤草稿（final 落框 / 会话结束时调用）。ref 只在 updater 外读写，updater 内只读闭包 → 纯函数可重放。
   const stripVoiceDraft = useCallback(() => {
     const d = voiceDraftRef.current
     voiceDraftRef.current = ''
-    if (d) setInput((prev) => (prev.endsWith(d) ? prev.slice(0, prev.length - d.length) : prev))
+    if (d) {
+      const expected = voiceDraftBaseRef.current + d
+      voiceDraftEditedRef.current ||= inputValueRef.current !== expected
+      if (!voiceDraftEditedRef.current) setInput(voiceDraftBaseRef.current)
+    }
   }, [])
   // partial → 替换输入框末尾草稿
-  const handleVoiceDraft = useCallback((partial: string | null) => {
+  const handleVoiceDraft = useCallback((partial: string | null, preserve = false) => {
     if (partial === null) {
-      stripVoiceDraft()
+      if (preserve) voiceDraftRef.current = ''
+      else stripVoiceDraft()
+      voiceDraftEditedRef.current = false
+      voiceDraftBaseRef.current = ''
+      voiceSentencesRef.current = []
       return
     }
     const prevDraft = voiceDraftRef.current
+    if (!prevDraft) voiceDraftBaseRef.current = inputValueRef.current
+    if (voiceDraftEditedRef.current || inputValueRef.current !== voiceDraftBaseRef.current + prevDraft) {
+      voiceDraftEditedRef.current = true
+      return
+    }
     voiceDraftRef.current = partial
-    setInput((prev) => {
-      const base = prevDraft && prev.endsWith(prevDraft) ? prev.slice(0, prev.length - prevDraft.length) : prev
-      return base + partial
-    })
+    setInput(voiceDraftBaseRef.current + partial)
   }, [stripVoiceDraft])
 
   // 语音转写结果（final 句）：撤掉草稿后拼到 input 末尾，需要时补空格。不自动发送，让用户确认。
   // voiceSentencesRef 按服务端 index 记录流式会话的每句原稿，供 polished 成稿无感替换；
   // index===0 = 新会话第一句 → 清掉上个会话的残留（服务端每会话序号从 0 递增）。
-  const voiceSentencesRef = useRef<Array<{ raw: string; replaced: boolean }>>([])
+  const voiceSentencesRef = useRef<Array<{ prefix: string; text: string }>>([])
   const handleVoiceTranscription = useCallback(
     (text: string, index?: number) => {
       stripVoiceDraft()
-      if (index !== undefined) {
-        if (index === 0) voiceSentencesRef.current = []
-        voiceSentencesRef.current[index] = { raw: text, replaced: false }
+      if (index === 0) voiceSentencesRef.current = []
+      if (voiceDraftEditedRef.current) {
+        voiceDraftEditedRef.current = false
+        return
       }
-      setInput((prev) => (prev ? (prev.endsWith(' ') ? prev + text : prev + ' ' + text) : text))
+      const prev = inputValueRef.current
+      const prefix = prev && !prev.endsWith(' ') ? prev + ' ' : prev
+      if (index !== undefined) voiceSentencesRef.current[index] = { prefix, text }
+      setInput(prefix + text)
       requestAnimationFrame(() => inputRef.current?.focus())
     },
     [stripVoiceDraft],
@@ -172,14 +194,21 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   // 编辑掉原稿（找不到）就放弃替换——绝不覆盖用户的编辑。
   const handleVoicePolished = useCallback((index: number, text: string) => {
     const s = voiceSentencesRef.current[index]
-    if (!s || s.replaced) return
-    const raw = s.raw
-    setInput((prev) => {
-      const i = prev.indexOf(raw)
-      if (i < 0) return prev
-      return prev.slice(0, i) + text + prev.slice(i + raw.length)
-    })
-    s.replaced = true
+    if (!s) return
+    const before = s.prefix + s.text
+    const current = inputValueRef.current
+    if (!current.startsWith(before)) return
+    const after = s.prefix + text
+    for (const other of voiceSentencesRef.current) {
+      if (other && other !== s && other.prefix.startsWith(before)) {
+        other.prefix = after + other.prefix.slice(before.length)
+      }
+    }
+    if (voiceDraftRef.current && voiceDraftBaseRef.current.startsWith(before)) {
+      voiceDraftBaseRef.current = after + voiceDraftBaseRef.current.slice(before.length)
+    }
+    s.text = text
+    setInput(after + current.slice(before.length))
   }, [])
 
   const handleVoiceError = useCallback(
@@ -312,13 +341,17 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
       // 防止：(1) 上一条会话尾音溢到新会话；(2) 流式 speaker 残留 cursor 状态
       // 注意：必须用**旧** sessionId（previousSessionIdRef 还没被覆盖前），否则
       // 清的是新会话的状态，老会话的 cursor 还残留。
+      micButtonRef.current?.cancelRecording?.()
+      stripVoiceDraft()
+      voiceSentencesRef.current = []
+      voiceDraftEditedRef.current = false
       resetTtsStreaming(previousSessionIdRef.current || undefined)
       previousSessionIdRef.current = nextSessionId
       userScrolledUpRef.current = false
       forceScrollToBottomRef.current = true
       previousTimelineSignatureRef.current = { count: 0, tailId: null }
     }
-  }, [currentSession?.id])
+  }, [currentSession?.id, stripVoiceDraft])
 
   // 切会话后 800ms 内持续 rAF 贴底：markdown / 代码高亮 / 图片是异步渲染，
   // 单次贴底无法保证"最终高度"被覆盖。这个循环跟随异步内容增长保持锚定。
@@ -656,7 +689,13 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     if (editingMessageRef.current) {
       clearEditMark()
     }
-    const result = handleSubmitBase(event, messageOverride)
+    const wasRecording = micButtonRef.current?.isRecording() || micButtonRef.current?.isLoading()
+    const text = messageOverride ?? inputValueRef.current
+    micButtonRef.current?.cancelRecording?.()
+    voiceDraftRef.current = ''
+    voiceDraftEditedRef.current = false
+    voiceSentencesRef.current = []
+    const result = handleSubmitBase(event, wasRecording ? text : messageOverride)
     clearAttachments()
     return result
   }, [handleSubmitBase, clearAttachments, clearEditMark])
