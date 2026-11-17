@@ -113,7 +113,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   // 不存在 → 异常）。
   // 历史：之前是双锚点（LLM 工作中 → timeline 末尾 / 闲 → 输入框上方），但 isLoading
   // 切换时 createPortal container 变化会让 child unmount/remount，DOM 几何位置瞬间跳变
-  // = 用户感知的"飘动"。改单锚点后视觉永远稳定贴底，跟 windsurf/Cursor 侧栏范式一致。
+  // = 用户感知的"飘动"。改单锚点后视觉永远稳定贴底，跟 主流编辑器 侧栏范式一致。
   const [tasksInputAnchor, setTasksInputAnchor] = useState<HTMLDivElement | null>(null)
   const userScrolledUpRef = useRef(false)
   // 语音输入：流式语音是唯一入口（旧批量转写已拆除）。按钮显隐由 voice 模块根据
