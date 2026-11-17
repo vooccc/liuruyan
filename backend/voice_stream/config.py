@@ -76,14 +76,16 @@ class VoiceStreamConfig(BaseModel):
     """本地 SenseVoice 模型目录。空 = 默认 <data_dir>/models/voice_stream/
     （其下应有 model.int8.onnx / tokens.txt / silero_vad.onnx，或同名 release 子目录）。"""
 
-    polish_enabled: bool = False
-    """LLM 纠错润色：每句 final 先过一遍 LLM（修错别字/标点）再上屏。"""
+    polish_enabled: bool = True
+    """句子成稿清理总开关（默认开，Typeless 式体验）：final 原稿立即上屏，
+    后台跑"规则替换 + LLM 润色（没配 key 时用本地语气词兜底）"，完成后发
+    polished 让前端无感替换原稿；失败保原稿，绝不更差。"""
 
     polish_provider_id: str = "dashscope"
     """润色用哪个 provider 的 key + base_url（OpenAI 兼容 chat）。"""
 
     polish_model: str = "qwen-turbo"
-    """润色模型名（便宜快速的即可）。"""
+    """润色模型名（便宜快速的即可，超时 6s 自动回退原稿）。"""
 
 
 def load_voice_stream_config() -> VoiceStreamConfig:
@@ -143,7 +145,12 @@ def stream_status() -> Dict[str, Any]:
     其余看 api_key）。
     """
     cfg = load_voice_stream_config()
+    from .download import download_state
     from .providers.local import local_model_status
+
+    local = local_model_status(cfg)
+    # 模型三件套下载进度（设置页「下载模型」按钮轮询这个字段）
+    local = {**local, "download": download_state()}
 
     if cfg.provider_id == "mock":
         available = cfg.enabled
@@ -189,5 +196,5 @@ def stream_status() -> Dict[str, Any]:
             "model": cfg.polish_model,
             "has_api_key": bool(polish_key),
         },
-        "local": local_model_status(cfg),
+        "local": local,
     }

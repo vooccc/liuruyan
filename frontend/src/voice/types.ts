@@ -10,7 +10,8 @@ import { API_BASE } from '../api/base'
 export type VoiceStreamServerEvent =
   | { type: 'started' }
   | { type: 'partial'; text: string }
-  | { type: 'final'; text: string }
+  | { type: 'final'; text: string; index?: number }
+  | { type: 'polished'; index: number; text: string }
   | { type: 'finished'; text: string }
   | { type: 'failed'; code: string; message: string }
 
@@ -44,10 +45,27 @@ export interface VoiceStreamPolishStatus {
   has_api_key: boolean
 }
 
+export interface VoiceStreamDownloadStatus {
+  /** idle 未开始 | downloading 进行中 | done 完成 | error 失败（可重试） */
+  phase: 'idle' | 'downloading' | 'done' | 'error'
+  file: string
+  label: string
+  downloaded: number
+  total: number
+  /** 当前文件百分比；total 未知时 -1 */
+  percent: number
+  files_done: number
+  files_total: number
+  error: string
+  started_at: number
+}
+
 export interface VoiceStreamLocalStatus {
   dir: string
   ready: boolean
   model: string
+  /** 模型三件套下载进度（未启动过下载的后端无此字段） */
+  download?: VoiceStreamDownloadStatus
 }
 
 export interface VoiceStreamConfigResponse {
@@ -121,4 +139,41 @@ export async function updateVoiceStreamConfig(
     throw new Error(`[${res.status}] update voice_stream config failed: ${text}`)
   }
   return res.json()
+}
+
+/** 启动本地模型三件套后台下载。返回启动结果 + 刷新后的完整状态。 */
+export async function startLocalModelDownload(): Promise<{
+  status: string
+  started: boolean
+  stream_status: VoiceStreamConfigResponse
+}> {
+  const res = await fetch(`${API_BASE}/voice/stream/local/download`, { method: 'POST' })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`[${res.status}] start local model download failed: ${text}`)
+  }
+  return res.json()
+}
+
+/** 读取替换规则文本（服务端不存在时返回模板）。 */
+export async function fetchVoiceStreamRules(): Promise<string> {
+  const res = await fetch(`${API_BASE}/voice/stream/rules`)
+  if (!res.ok) throw new Error(`[${res.status}] fetch rules failed`)
+  const data = (await res.json()) as { content: string }
+  return data.content
+}
+
+/** 保存替换规则文本。返回生效的规则条数。 */
+export async function updateVoiceStreamRules(content: string): Promise<number> {
+  const res = await fetch(`${API_BASE}/voice/stream/rules`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`[${res.status}] update rules failed: ${text}`)
+  }
+  const data = (await res.json()) as { count: number }
+  return data.count
 }

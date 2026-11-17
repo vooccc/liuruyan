@@ -5,13 +5,16 @@
  * 保存后 dispatch 'voice-config-updated' 让输入框按钮即时切换流式/旧版。
  * UI 复用 voice-settings-* 全套样式类（hero / section / radio-card），零新增 CSS。
  */
-import { useCallback, useEffect, useState } from 'react'
-import { AlertCircle, AudioWaveform, CheckCircle2, Loader2 } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { AlertCircle, AudioWaveform, CheckCircle2, Download, Loader2 } from 'lucide-react'
 
 import { listProviders, type ProviderView } from '../api/providers'
 import {
   fetchVoiceStreamConfig,
+  fetchVoiceStreamRules,
+  startLocalModelDownload,
   updateVoiceStreamConfig,
+  updateVoiceStreamRules,
   type VoiceStreamConfigResponse,
 } from './types'
 
@@ -89,6 +92,35 @@ export default function VoiceStreamSettingsPane() {
   const [providers, setProviders] = useState<ProviderView[]>([])
   // 纠错模型名草稿：输入不立即 PUT，blur / Enter 提交（避免每敲一个字打一次接口）
   const [modelDraft, setModelDraft] = useState<string | null>(null)
+  // 模型下载按钮的请求级报错（下载本身的失败走 status.local.download.error）
+  const [dlReqErr, setDlReqErr] = useState<string | null>(null)
+
+  // 模型下载进度轮询：downloading 时每 1.5s 拉 config；done 瞬间广播事件
+  // 让输入框麦克风按钮即时出现（VoiceInputSlot 监听 voice-config-updated）
+  const dlPhase = status?.local.download?.phase ?? 'idle'
+  const dlPhaseRef = useRef(dlPhase)
+  useEffect(() => {
+    if (dlPhaseRef.current !== 'done' && dlPhase === 'done') {
+      window.dispatchEvent(new CustomEvent('voice-config-updated'))
+    }
+    dlPhaseRef.current = dlPhase
+    if (dlPhase !== 'downloading') return
+    const t = setInterval(async () => {
+      const data = await fetchVoiceStreamConfig()
+      if (data) setStatus(data)
+    }, 1500)
+    return () => clearInterval(t)
+  }, [dlPhase])
+
+  const handleDownloadModel = useCallback(async () => {
+    setDlReqErr(null)
+    try {
+      const r = await startLocalModelDownload()
+      setStatus(r.stream_status)
+    } catch (e) {
+      setDlReqErr(e instanceof Error ? e.message : String(e))
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -212,18 +244,114 @@ export default function VoiceStreamSettingsPane() {
               ))}
             </div>
             {status.provider === 'local' ? (
-              <p style={{ marginTop: 8, fontSize: 13, color: 'var(--text-secondary, #666)' }}>
+              <div style={{ marginTop: 8, fontSize: 13, color: 'var(--text-secondary, #666)' }}>
                 {status.local.ready ? (
                   <span style={{ color: 'var(--accent-green, #22c55e)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                     <CheckCircle2 size={14} /> 本地模型已就绪：{status.local.model}
                   </span>
                 ) : (
-                  <span style={{ color: '#f59e0b', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    <AlertCircle size={14} /> 模型未就绪：需要 model.int8.onnx / tokens.txt /
-                    silero_vad.onnx 放在 {status.local.dir} 下（约 230MB，下载一次永久离线用）
-                  </span>
+                  <>
+                    <span style={{ color: '#f59e0b', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <AlertCircle size={14} /> 本地模型未下载——点下方按钮自动获取（约 230MB，
+                      下载一次永久离线用）
+                    </span>
+                    {(() => {
+                      const dl = status.local.download
+                      if (dl?.phase === 'downloading') {
+                        const mb = (n: number) => `${(n / 1048576).toFixed(1)}MB`
+                        return (
+                          <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                              <Loader2 size={14} className="spin" />
+                              正在下载 {dl.label}（{dl.files_done}/{dl.files_total}）
+                              {dl.percent >= 0 ? ` · ${dl.percent}%` : ''}
+                              {dl.total > 0 ? ` · ${mb(dl.downloaded)}/${mb(dl.total)}` : ''}
+                            </span>
+                            {dl.percent >= 0 ? (
+                              <div
+                                style={{
+                                  width: 320,
+                                  maxWidth: '100%',
+                                  height: 6,
+                                  borderRadius: 3,
+                                  background: 'var(--bg-tertiary, rgba(128,128,128,0.2))',
+                                  overflow: 'hidden',
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    width: `${dl.percent}%`,
+                                    height: '100%',
+                                    background: 'var(--primary, #3b82f6)',
+                                    transition: 'width 0.3s',
+                                  }}
+                                />
+                              </div>
+                            ) : null}
+                          </div>
+                        )
+                      }
+                      if (dl?.phase === 'error') {
+                        return (
+                          <div
+                            style={{
+                              marginTop: 10,
+                              color: 'var(--accent-red, #ef4444)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              flexWrap: 'wrap',
+                            }}
+                          >
+                            <AlertCircle size={14} /> 下载失败：{dl.error}
+                            <button
+                              type="button"
+                              className="toolbar-action-btn"
+                              onClick={() => void handleDownloadModel()}
+                            >
+                              重试
+                            </button>
+                          </div>
+                        )
+                      }
+                      return (
+                        <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <button
+                            type="button"
+                            onClick={() => void handleDownloadModel()}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              padding: '6px 14px',
+                              borderRadius: 6,
+                              border: 'none',
+                              background: 'var(--primary, #3b82f6)',
+                              color: '#fff',
+                              fontSize: 13,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <Download size={14} /> 下载模型（约 230MB）
+                          </button>
+                          {dlReqErr ? (
+                            <span
+                              style={{
+                                color: 'var(--accent-red, #ef4444)',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                              }}
+                            >
+                              <AlertCircle size={13} /> {dlReqErr}
+                            </span>
+                          ) : null}
+                        </div>
+                      )
+                    })()}
+                  </>
                 )}
-              </p>
+              </div>
             ) : null}
           </section>
 
@@ -250,14 +378,14 @@ export default function VoiceStreamSettingsPane() {
               <RadioCard
                 checked={status.polish.enabled}
                 onChange={() => void apply({ polish_enabled: true })}
-                title="开启纠错"
-                desc={`每句识别结果先过一遍 LLM 修错别字/标点再上屏（用 ${status.polish.provider_id} 的 ${status.polish.model}，失败自动回退原文）`}
+                title="开启成稿清理（推荐）"
+                desc={`原稿立即上屏不等待，后台自动清理后无感替换：去语气词/修错别字/规整格式${status.polish.has_api_key ? `（用 ${status.polish.provider_id} 的 ${status.polish.model}）` : '（未配 LLM key，仅本地保守清理）'}；失败保原稿，绝不更差`}
               />
               <RadioCard
                 checked={!status.polish.enabled}
                 onChange={() => void apply({ polish_enabled: false })}
                 title="关闭"
-                desc="识别结果直接上屏，零额外延迟"
+                desc="识别结果直接上屏，原样保留"
               />
             </div>
             {status.polish.enabled ? (
@@ -427,9 +555,10 @@ export default function VoiceStreamSettingsPane() {
             {status.polish.enabled && !status.polish.has_api_key && !providers.length ? (
               <p style={{ marginTop: 8, fontSize: 13, color: '#f59e0b', display: 'flex', alignItems: 'center', gap: 6 }}>
                 <AlertCircle size={14} /> 纠错 provider「{status.polish.provider_id}」没配 key，
-                目前会直接回退原文——去「模型服务」配置后自动生效。
+                目前用本地保守清理——去「模型服务」配置 LLM 后效果更完整。
               </p>
             ) : null}
+            {status.polish.enabled ? <RulesEditor /> : null}
           </section>
 
           <section className="voice-settings-section">
@@ -485,6 +614,109 @@ export default function VoiceStreamSettingsPane() {
             <AlertCircle size={14} /> 保存失败：{saveErr}
           </span>
         )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * RulesEditor：成稿替换规则编辑器（借鉴 CapsWriter hot-rule.txt）。
+ * 每行一条「模式 = 替换文本」，左侧支持正则与 $1 捕获组引用；
+ * 识别结果先过规则（确定性）再走 LLM，LLM 输出也会再过一遍。
+ */
+function RulesEditor() {
+  const [content, setContent] = useState<string | null>(null)
+  const [dirty, setDirty] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [savedMsg, setSavedMsg] = useState('')
+  const [err, setErr] = useState('')
+  const loadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    // 稍延迟加载：设置页刚打开时后端可能还在冷启动
+    loadTimerRef.current = setTimeout(() => {
+      fetchVoiceStreamRules()
+        .then((c) => setContent(c))
+        .catch(() => setContent('# 加载失败：后端未就绪，稍后重试'))
+    }, 300)
+    return () => {
+      if (loadTimerRef.current) clearTimeout(loadTimerRef.current)
+    }
+  }, [])
+
+  const save = async () => {
+    if (content === null) return
+    setSaving(true)
+    setErr('')
+    try {
+      const n = await updateVoiceStreamRules(content)
+      setSavedMsg(`已保存，当前生效 ${n} 条规则`)
+      setDirty(false)
+      setTimeout(() => setSavedMsg(''), 3000)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (content === null) {
+    return <p style={{ marginTop: 12, fontSize: 13, color: 'var(--text-secondary, #666)' }}>加载替换规则中…</p>
+  }
+
+  return (
+    <div style={{ marginTop: 12 }}>
+      <p style={{ fontSize: 13, color: 'var(--text-secondary, #666)', margin: '0 0 6px' }}>
+        替换规则：每行一条「模式 = 替换文本」，模式支持正则与 $1 引用。识别结果先过规则再走 LLM，
+        适合固定话术、单位符号、人名纠错（如「毫安时 = mAh」「编程点 MD = 编程.md」）。
+      </p>
+      <textarea
+        value={content}
+        onChange={(e) => {
+          setContent(e.target.value)
+          setDirty(true)
+        }}
+        spellCheck={false}
+        rows={8}
+        style={{
+          width: '100%',
+          maxWidth: 640,
+          fontFamily: 'monospace',
+          fontSize: 12,
+          lineHeight: 1.6,
+          padding: 8,
+          borderRadius: 6,
+          border: '1px solid var(--border, #ddd)',
+          background: 'var(--bg, #fff)',
+          color: 'var(--text, #222)',
+          resize: 'vertical',
+        }}
+      />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6 }}>
+        <button
+          type="button"
+          className="voice-select"
+          disabled={!dirty || saving}
+          onClick={() => void save()}
+          style={{
+            width: 'auto',
+            maxWidth: 140,
+            cursor: dirty && !saving ? 'pointer' : 'default',
+            opacity: dirty && !saving ? 1 : 0.55,
+          }}
+        >
+          {saving ? '保存中…' : '保存规则'}
+        </button>
+        {savedMsg ? (
+          <span style={{ fontSize: 13, color: 'var(--accent-green, #22c55e)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <CheckCircle2 size={14} /> {savedMsg}
+          </span>
+        ) : null}
+        {err ? (
+          <span style={{ fontSize: 13, color: '#f59e0b', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <AlertCircle size={14} /> {err}
+          </span>
+        ) : null}
       </div>
     </div>
   )

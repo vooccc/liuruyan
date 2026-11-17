@@ -13,12 +13,15 @@ import type { VoiceStreamButtonRef } from './types'
 
 interface VoiceStreamButtonProps {
   disabled?: boolean
-  onTranscription: (text: string) => void
+  /** 一句最终结果（index = 会话内序号，供成稿替换对齐）。 */
+  onTranscription: (text: string, index?: number) => void
   onError?: (message: string) => void
   /** 录音上限秒数（/voice/stream/config 下发，默认 600）。 */
   maxSeconds?: number
   /** 草稿回调：partial 实时写进输入框（见 useVoiceStream 头注释）。 */
   onDraftChange?: (draft: string | null) => void
+  /** 成稿回调：第 index 句的加工结果（规则替换/LLM 润色），无感替换原稿。 */
+  onPolished?: (index: number, text: string) => void
 }
 
 /** 录音中的波形动画（复用现有 mic-waves CSS）。 */
@@ -33,12 +36,13 @@ function RecordingWaves() {
 }
 
 const VoiceStreamButton = forwardRef<VoiceStreamButtonRef, VoiceStreamButtonProps>(
-  ({ disabled, onTranscription, onError, maxSeconds = 600, onDraftChange }, ref) => {
+  ({ disabled, onTranscription, onError, maxSeconds = 600, onDraftChange, onPolished }, ref) => {
     const { phase, level, toggle } = useVoiceStream({
       onTranscription,
       onError,
       maxSeconds,
       onDraftChange,
+      onPolished,
     })
 
     const phaseRef = useRef<VoiceStreamPhase>(phase)

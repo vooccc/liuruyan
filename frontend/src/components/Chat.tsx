@@ -113,7 +113,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   // 不存在 → 异常）。
   // 历史：之前是双锚点（LLM 工作中 → timeline 末尾 / 闲 → 输入框上方），但 isLoading
   // 切换时 createPortal container 变化会让 child unmount/remount，DOM 几何位置瞬间跳变
-  // = 用户感知的"飘动"。改单锚点后视觉永远稳定贴底，跟 主流编辑器 侧栏范式一致。
+  // = 用户感知的"飘动"。改单锚点后视觉永远稳定贴底，跟 windsurf/Cursor 侧栏范式一致。
   const [tasksInputAnchor, setTasksInputAnchor] = useState<HTMLDivElement | null>(null)
   const userScrolledUpRef = useRef(false)
   // 语音输入：流式语音是唯一入口（旧批量转写已拆除）。按钮显隐由 voice 模块根据
@@ -150,15 +150,37 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     })
   }, [stripVoiceDraft])
 
-  // 语音转写结果（final 句 / 旧档整段）：撤掉草稿后拼到 input 末尾，需要时补空格。不自动发送，让用户确认。
+  // 语音转写结果（final 句）：撤掉草稿后拼到 input 末尾，需要时补空格。不自动发送，让用户确认。
+  // voiceSentencesRef 按服务端 index 记录流式会话的每句原稿，供 polished 成稿无感替换；
+  // index===0 = 新会话第一句 → 清掉上个会话的残留（服务端每会话序号从 0 递增）。
+  const voiceSentencesRef = useRef<Array<{ raw: string; replaced: boolean }>>([])
   const handleVoiceTranscription = useCallback(
-    (text: string) => {
+    (text: string, index?: number) => {
       stripVoiceDraft()
+      if (index !== undefined) {
+        if (index === 0) voiceSentencesRef.current = []
+        voiceSentencesRef.current[index] = { raw: text, replaced: false }
+      }
       setInput((prev) => (prev ? (prev.endsWith(' ') ? prev + text : prev + ' ' + text) : text))
       requestAnimationFrame(() => inputRef.current?.focus())
     },
     [stripVoiceDraft],
   )
+
+  // 成稿回调：第 index 句的加工结果（规则替换/LLM 润色）到达 → 无感替换原稿。
+  // 替换策略：input 里找原稿第一次出现（中文场景同文多句概率极低）；用户已手动
+  // 编辑掉原稿（找不到）就放弃替换——绝不覆盖用户的编辑。
+  const handleVoicePolished = useCallback((index: number, text: string) => {
+    const s = voiceSentencesRef.current[index]
+    if (!s || s.replaced) return
+    const raw = s.raw
+    setInput((prev) => {
+      const i = prev.indexOf(raw)
+      if (i < 0) return prev
+      return prev.slice(0, i) + text + prev.slice(i + raw.length)
+    })
+    s.replaced = true
+  }, [])
 
   const handleVoiceError = useCallback(
     (message: string) => {
@@ -993,6 +1015,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
             onVoiceTranscription={handleVoiceTranscription}
             onVoiceError={handleVoiceError}
             onVoiceDraft={handleVoiceDraft}
+            onVoicePolished={handleVoicePolished}
             micButtonRef={micButtonRef}
           />
         )}

@@ -18,8 +18,11 @@ import type { VoiceStreamServerEvent } from './types'
 export type VoiceStreamPhase = 'idle' | 'connecting' | 'recording' | 'finishing'
 
 export interface UseVoiceStreamOptions {
-  /** 一句最终结果回调（追加进输入框）。 */
-  onTranscription: (text: string) => void
+  /**
+   * 一句最终结果回调（追加进输入框）。
+   * index = 会话内句子序号（服务端从 0 递增），供成稿替换对齐；旧版协议无此参数。
+   */
+  onTranscription: (text: string, index?: number) => void
   /** 错误回调（toast 用）。 */
   onError?: (message: string) => void
   /** 录音上限秒数（来自 /voice/stream/config，默认 600）。 */
@@ -29,6 +32,11 @@ export interface UseVoiceStreamOptions {
    * string = 把输入框末尾的旧草稿替换为该文本；null = 撤掉草稿（final 落框前 / 会话结束）。
    */
   onDraftChange?: (draft: string | null) => void
+  /**
+   * 成稿回调：第 index 句的后台加工结果（规则替换/LLM 润色）。
+   * final 原稿已先行落框，这里把对应句子无感替换为干净文本；失败不发此事件（保原稿）。
+   */
+  onPolished?: (index: number, text: string) => void
 }
 
 export interface VoiceStreamController {
@@ -44,7 +52,7 @@ export interface VoiceStreamController {
 }
 
 export function useVoiceStream(opts: UseVoiceStreamOptions): VoiceStreamController {
-  const { onTranscription, onError, maxSeconds = 600, onDraftChange } = opts
+  const { onTranscription, onError, maxSeconds = 600, onDraftChange, onPolished } = opts
 
   const [phase, setPhase] = useState<VoiceStreamPhase>('idle')
   const [partial, setPartial] = useState('')
@@ -57,11 +65,13 @@ export function useVoiceStream(opts: UseVoiceStreamOptions): VoiceStreamControll
   const onTranscriptionRef = useRef(onTranscription)
   const onErrorRef = useRef(onError)
   const onDraftChangeRef = useRef(onDraftChange)
+  const onPolishedRef = useRef(onPolished)
   const autoStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   onTranscriptionRef.current = onTranscription
   onErrorRef.current = onError
   onDraftChangeRef.current = onDraftChange
+  onPolishedRef.current = onPolished
 
   const _setPhase = (p: VoiceStreamPhase) => {
     phaseRef.current = p
@@ -88,7 +98,10 @@ export function useVoiceStream(opts: UseVoiceStreamOptions): VoiceStreamControll
         // 先撤草稿再落正式句（顺序不能反，否则正式句会拼在草稿后面）
         setPartial('')
         onDraftChangeRef.current?.(null)
-        onTranscriptionRef.current(ev.text)
+        onTranscriptionRef.current(ev.text, ev.index)
+        break
+      case 'polished':
+        onPolishedRef.current?.(ev.index, ev.text)
         break
       case 'finished':
         setPartial('')

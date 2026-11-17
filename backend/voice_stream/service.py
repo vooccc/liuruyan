@@ -10,7 +10,9 @@
 服务端 → 浏览器事件（JSON）：
     {"type": "started"}                       可发音频
     {"type": "partial", "text"}               当前句中间结果（实时预览用）
-    {"type": "final", "text"}                 一句最终结果（拼进输入框）
+    {"type": "final", "text"}                 一句最终结果（原稿，立即拼进输入框）
+    {"type": "polished", "index", "text"}     第 index 句的成稿（后台加工完成，
+                                              前端无感替换原稿；可能多次，以最后一次为准）
     {"type": "finished", "text"}              任务完成，text=累计全文
     {"type": "failed", "code", "message"}      失败（含 disabled / no key / 上游错误）
 """
@@ -23,7 +25,7 @@ from typing import List, Optional
 from fastapi import WebSocket, WebSocketDisconnect
 
 from .config import VoiceStreamConfig, load_voice_stream_config, resolve_api_key
-from .polish import polish_text
+from .polish import apply_rules, local_filler_cleanup, polish_available, polish_via_llm
 from .providers.base import ProviderEvent, RealtimeProvider
 from .providers.dashscope import DashScopeRealtimeProvider
 from .providers.local import LocalSenseVoiceProvider, resolve_local_model_paths
@@ -33,8 +35,8 @@ from .providers.mock import MockRealtimeProvider
 _MAX_BUFFERED_BYTES = 10 * 1024 * 1024
 # finish 后等 provider 终态的兜底（provider 内部另有 drain timeout）
 _FINISH_WAIT_TIMEOUT = 30.0
-# finish 后等纠错队列排空的上限
-_POLISH_DRAIN_TIMEOUT = 25.0
+# finish 后等成稿队列排空的上限（LLM 超时 6s + 规则瞬时，10s 够）
+_POLISH_DRAIN_TIMEOUT = 10.0
 
 
 def build_provider(cfg: VoiceStreamConfig) -> RealtimeProvider:
@@ -62,8 +64,10 @@ class VoiceStreamSession:
         self._buffered_bytes = 0
         self._started = False
         self._session_started_at = 0.0
-        # 纠错队列：final 进队列异步润色，保序上屏（partial 不排队，直接透传）
+        # 成稿队列：final 原稿立即上屏，后台加工完成后发 polished 让前端替换
         self._polish_tasks: List[asyncio.Task] = []
+        # 会话内句子序号（polished.index 与之对应）
+        self._sentence_seq = 0
 
     async def run(self) -> None:
         await self._ws.accept()
@@ -185,20 +189,48 @@ class VoiceStreamSession:
                 self._buffered_bytes = 0
                 for frame in buffered:
                     await self._provider.feed(frame)
-        elif ev.get("type") == "final" and self._cfg.polish_enabled:
-            # 纠错管线：final 进异步队列，保序润色后上屏（失败自动回退原文）
-            task = asyncio.create_task(self._polish_and_forward(ev.get("text") or ""))
-            self._polish_tasks.append(task)
+        elif ev.get("type") == "final":
+            # final 原稿立即上屏（不等 LLM）；index 供前端做 polished 无感替换。
+            # polish 开着 → 后台加工后发 polished；关着 → 仅透传（index 照带，协议统一）。
+            index = self._sentence_seq
+            self._sentence_seq += 1
+            if self._cfg.polish_enabled:
+                await self._forward({**ev, "index": index})
+                task = asyncio.create_task(
+                    self._polish_and_forward(ev.get("text") or "", index)
+                )
+                self._polish_tasks.append(task)
+            else:
+                await self._forward({**ev, "index": index})
         elif ev.get("type") == "finished":
-            # 等纠错队列排空再收尾，保证句子全部落地
+            # 等成稿队列排空再收尾，保证 polished 事件先于 finished 到达
             await self._drain_polish()
             await self._forward(ev)
         else:
             await self._forward(ev)
 
-    async def _polish_and_forward(self, text: str) -> None:
-        polished = await polish_text(text, self._cfg)
-        await self._forward({"type": "final", "text": polished})
+    async def _polish_and_forward(self, raw: str, index: int) -> None:
+        """后台成稿：规则替换（确定性，先行）→ LLM 润色 → 无感替换。
+
+        每一步结果与"当前已上屏文本"不同才发 polished；LLM 失败/超时静默保原稿。
+        """
+        current = apply_rules(raw)
+        if current != raw:
+            await self._forward({"type": "polished", "index": index, "text": current})
+        if polish_available(self._cfg):
+            llm = await polish_via_llm(current, self._cfg)
+            if llm is not None:
+                # LLM 输出再过一遍规则（用户规则优先级最高，双保险）
+                final_text = apply_rules(llm)
+                if final_text != current:
+                    await self._forward(
+                        {"type": "polished", "index": index, "text": final_text}
+                    )
+                return
+        # 没配 LLM（或 LLM 失败）→ 本地语气词兜底（极保守，受总开关控制）
+        local = local_filler_cleanup(current)
+        if local != current:
+            await self._forward({"type": "polished", "index": index, "text": local})
 
     async def _drain_polish(self) -> None:
         pending = [t for t in self._polish_tasks if not t.done()]

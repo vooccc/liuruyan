@@ -2,6 +2,7 @@
 
 - GET  /voice/stream/config   前端降级判断的唯一依据
 - PUT  /voice/stream/config   设置页 partial 更新（同 /voice/config PUT 的模式）
+- POST /voice/stream/local/download  启动本地模型三件套后台下载（download.py）
 - WS   /voice/stream/ws      浏览器 PCM 流中继
 
 main.py 注册（2 行，删除本模块时还原这 2 行即可）：
@@ -61,6 +62,55 @@ async def update_stream_config(body: VoiceStreamConfigUpdate) -> Dict[str, Any]:
         "config": new_cfg.model_dump(),
         "stream_status": stream_status(),
     }
+
+
+@router.post("/local/download")
+async def start_local_model_download() -> Dict[str, Any]:
+    """启动本地模型三件套后台下载（已在下载中时幂等返回当前进度）。
+
+    进度通过 GET /config 的 local.download 字段轮询；完成后 local.ready 变 true。
+    """
+    from .download import download_state, start_model_download
+
+    started = start_model_download()
+    return {
+        "status": "success",
+        "started": started,
+        "download": download_state(),
+        "stream_status": stream_status(),
+    }
+
+
+@router.get("/rules")
+async def get_rules() -> Dict[str, Any]:
+    """读取替换规则文本（首次访问自动写出带示例的模板文件）。"""
+    from .polish import default_rules_path, ensure_rules_file
+
+    ensure_rules_file()
+    path = default_rules_path()
+    try:
+        content = path.read_text(encoding="utf-8") if path.is_file() else ""
+    except OSError:
+        content = ""
+    return {"content": content}
+
+
+@router.put("/rules")
+async def update_rules(body: Dict[str, str]) -> Dict[str, Any]:
+    """保存替换规则文本（body.content）。写入后强制重载缓存。"""
+    from .polish import default_rules_path, load_rules
+
+    content = body.get("content")
+    if not isinstance(content, str):
+        raise HTTPException(status_code=400, detail="body.content (string) required")
+    path = default_rules_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"write rules failed: {e}")
+    load_rules(force_reload=True)
+    return {"status": "success", "count": len(load_rules(force_reload=True))}
 
 
 @router.websocket("/ws")
