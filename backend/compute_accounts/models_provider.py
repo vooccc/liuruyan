@@ -24,11 +24,17 @@ def get_pro_providers() -> List[Dict[str, Any]]:
             # 若用户在插件配置中自定义了展示模型，则严格只展示所选模型
             if enabled_models is not None and m["id"] not in enabled_models:
                 continue
-            tags = ["vision", "tools"]
+            tags: List[str] = []
+            if m.get("vision", True):
+                tags.append("vision")
+            if m.get("tools", True):
+                tags.append("function_calling")
             mid = m["id"].lower()
             mname = m.get("name", "").lower()
             if "thinking" in mid or "thinking" in mname or "reason" in mid or "high" in mid:
                 tags.append("reasoning")
+            if not tags:
+                tags.append("chat")
             model_entries.append({
                 "id": m["id"],
                 "name": m["name"],

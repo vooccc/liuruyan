@@ -140,6 +140,11 @@ class ComputeAccountsManager:
         """获取当前生效的模型清单（优先使用同步的云端 Recommended 列表，兜底用本地静态清单）"""
         synced = self._synced_models.get(provider_id)
         if synced and len(synced) > 0:
+            if provider_id == "google":
+                synced_ids = {m.get("id") for m in synced}
+                missing = [m for m in ANTIGRAVITY_43_MODELS if m["id"] not in synced_ids]
+                if missing:
+                    return missing + synced
             return synced
         if provider_id == "google":
             return ANTIGRAVITY_43_MODELS

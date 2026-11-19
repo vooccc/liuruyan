@@ -142,6 +142,18 @@ async def _fetch_openrouter(
         seen.add(mid)
         pricing = m.get("pricing") or {}
         meta = _enrich(mid, m.get("name", "") or "", pricing)
+        tags = list(meta["tags"])
+        # OpenRouter 官方返回 architecture.input_modalities 时以官方声明为准
+        arch = m.get("architecture")
+        if isinstance(arch, dict):
+            input_mods = arch.get("input_modalities")
+            if isinstance(input_mods, list) and input_mods:
+                mods_lower = {str(x).lower() for x in input_mods}
+                if "image" in mods_lower:
+                    if "vision" not in tags:
+                        tags.append("vision")
+                elif "vision" in tags:
+                    tags = [t for t in tags if t != "vision"]
         out.append(
             DiscoveredModel(
                 id=mid,
@@ -150,7 +162,7 @@ async def _fetch_openrouter(
                 pricing=pricing or None,
                 is_free=meta["is_free"],
                 free_reason=meta["free_reason"],
-                tags=meta["tags"],
+                tags=tags,
                 context_length=m.get("context_length") or meta["context_length"],
             )
         )

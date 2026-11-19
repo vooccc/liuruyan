@@ -115,7 +115,7 @@ def register(registry):
             "- Prefer the `edit` tool for modifying existing files — it only sends the diff. Only use this tool to create new files or for complete rewrites.\n"
             "- NEVER create documentation files (*.md) or README files unless explicitly requested by the User.\n"
             "- Only use emojis if the user explicitly requests it. Avoid writing emojis to files unless asked.\n"
-            "- Writes to `backend/**` are blocked by Guardian for cross-agent safety."
+            "- Writes to `backend/**` are subject to current write permissions. When allowed, use this tool directly. If denied, stop; do not retry through another tool."
         ),
         input_schema={
             "type": "object",
@@ -148,7 +148,7 @@ def register(registry):
             "- Only use emojis if the user explicitly requests it. Avoid adding emojis to files unless asked.\n"
             "- The edit will FAIL if `old_string` is not unique in the file. Either provide a larger string with more surrounding context to make it unique or use `replace_all` to change every instance of `old_string`.\n"
             "- Use `replace_all` for replacing and renaming strings across the file. This parameter is useful if you want to rename a variable for instance.\n"
-            "- Writes to `backend/**` are blocked by Guardian for cross-agent safety."
+            "- Writes to `backend/**` are subject to current write permissions. When allowed, use this tool directly. If denied, stop; do not retry through another tool."
         ),
         input_schema={
             "type": "object",
@@ -204,7 +204,7 @@ def register(registry):
             "- Do not leave the code in a broken state.\n"
             "- Only use emojis if the user explicitly requests it. Avoid adding emojis to files unless asked.\n"
             "- Use `replace_all` for replacing and renaming strings across the file.\n"
-            "- Writes to `backend/**` are blocked by Guardian for cross-agent safety."
+            "- Writes to `backend/**` are subject to current write permissions. When allowed, use this tool directly. If denied, stop; do not retry through another tool."
         ),
         input_schema={
             "type": "object",

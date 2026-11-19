@@ -43,7 +43,10 @@ const RULES: Rule[] = [
       /gpt-?4o/i,
       /gpt-?4-?turbo/i,
       /gpt-?5/i,                    // gpt-5 / gpt-5.1 / gpt-5.4-mini / gpt-5-chat 等全家
+      /gpt-?6/i,
       /claude-3/i,
+      /claude-4/i,
+      /claude-(?:fable|mythos)/i,
       /claude.*opus/i,              // 通配 opus-3 / opus-4 / opus-4.5...
       /claude.*sonnet/i,            // 通配 sonnet-3.5 / sonnet-4 / sonnet-4.5...
       /claude.*haiku/i,             // 通配所有 haiku 变体
@@ -51,6 +54,9 @@ const RULES: Rule[] = [
       /gemini.*flash/i,
       /gemini-1\.5/i,
       /gemini-2/i,
+      /gemini-3/i,
+      /gemini-4/i,
+      /gemini.*hydrogen/i,
       /glm-4v/i,
       /qwen.*vl/i,                  // qwen-vl / qwen2-vl / qwen2.5-vl
       /qwen2.*vl/i,
@@ -102,6 +108,7 @@ const _BACKEND_TAG_TO_CAP: Record<string, Capability> = {
   audio: 'audio',
   image_gen: 'image-gen',
   function_calling: 'tools',
+  tools: 'tools',
 }
 
 export function capsFromBackendTags(tags: string[]): Capability[] {
@@ -192,6 +199,7 @@ export const BACKEND_TAG_LABELS: Record<string, string> = {
   reasoning: '推理',
   vision: '视觉',
   function_calling: 'tools',
+  tools: 'tools',
   websearch: '联网',
   embedding: 'embed',
   rerank: 'rerank',
@@ -204,6 +212,7 @@ export const BACKEND_TAG_COLORS: Record<string, string> = {
   reasoning: 'cap-gold',
   vision: 'cap-purple',
   function_calling: 'cap-blue',
+  tools: 'cap-blue',
   websearch: 'cap-green',
   embedding: 'cap-pink',
   rerank: 'cap-red',

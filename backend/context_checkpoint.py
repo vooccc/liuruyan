@@ -93,10 +93,11 @@ def make_context_checkpoint(
     summary_model: Optional[str] = None,
     tokens_before: Optional[int] = None,
     tokens_after: Optional[int] = None,
+    recent_non_system_count: Optional[int] = None,
 ) -> Dict[str, Any]:
     """构造可持久化检查点；易变元数据不会拼入 ``summary``。"""
     covered = int(covered_message_count)
-    return {
+    checkpoint: Dict[str, Any] = {
         "schema_version": CONTEXT_CHECKPOINT_SCHEMA_VERSION,
         "summary_prompt_version": CONTEXT_SUMMARY_PROMPT_VERSION,
         "session_id": str(session_id or ""),
@@ -111,6 +112,9 @@ def make_context_checkpoint(
         "tokens_after": int(tokens_after) if isinstance(tokens_after, int) else None,
         "created_at": datetime.now().isoformat(),
     }
+    if isinstance(recent_non_system_count, int) and recent_non_system_count >= 0:
+        checkpoint["recent_non_system_count"] = recent_non_system_count
+    return checkpoint
 
 
 def load_context_checkpoint(path: Path) -> Optional[Dict[str, Any]]:

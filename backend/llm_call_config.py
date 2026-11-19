@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
 
 from .agent_config import get_agent_active_model
-from .providers.capabilities import infer_context_length
+from .providers.capabilities import infer_capabilities, infer_context_length, resolve_model_capabilities
 from .providers.store import find_model, load_providers_config_cached
 
 
@@ -71,6 +71,9 @@ class CallModelConfig:
 
     context_length: Optional[int] = None
     """当前模型的有效上下文窗口。显式配置优先，否则按官方模型目录推断。"""
+
+    tags: Optional[Tuple[str, ...]] = None
+    """模型能力标签快照（优先来自模型配置/算力通道权威 tags，缺失时由 infer_capabilities 兜底）。"""
 
     @property
     def provider_kind(self) -> str:
@@ -131,6 +134,7 @@ def resolve_call_model_config(
     config = load_providers_config_cached()
 
     session_model = getattr(session, "model", None) if session is not None else None
+    session_provider_hint = getattr(session, "provider", None) if session is not None else None
     global_model = config.get("current_model") or None
     global_provider_hint = config.get("current_provider") or None
 
@@ -154,28 +158,67 @@ def resolve_call_model_config(
         from backend.compute_accounts.models_provider import is_pro_provider, get_pro_providers
         explicit_pro = (
             override_provider if is_pro_provider(override_provider)
+            else (session_provider_hint if (is_pro_provider(session_provider_hint) and model == session_model)
             else (agent_provider_hint if (is_pro_provider(agent_provider_hint) and model == agent_model)
             else (global_provider_hint if (is_pro_provider(global_provider_hint) and model == global_model)
-            else None))
+            else None)))
         )
+        pro_providers = get_pro_providers()
         if explicit_pro:
+            pid_l = explicit_pro.lower()
+            matched_pro_model = None
+            for vp in pro_providers:
+                if (vp.get("id") or "").lower() == pid_l or (pid_l == "google" and vp.get("id") == "google-antigravity"):
+                    matched_pro_model = next((m for m in vp.get("models", []) if m.get("id") == model), None)
+                    if matched_pro_model is not None:
+                        break
+            if matched_pro_model is None:
+                for vp in pro_providers:
+                    matched_pro_model = next((m for m in vp.get("models", []) if m.get("id") == model), None)
+                    if matched_pro_model is not None:
+                        break
+            pro_tags = tuple(
+                resolve_model_capabilities(
+                    model,
+                    provider_id=explicit_pro,
+                    explicit_tags=matched_pro_model.get("tags") if matched_pro_model else None,
+                    name=matched_pro_model.get("name") if matched_pro_model else None,
+                )
+            )
+            pro_ctx = (
+                (matched_pro_model.get("context_window") or matched_pro_model.get("context_length"))
+                if matched_pro_model
+                else None
+            ) or infer_context_length(model) or 1048576
             return CallModelConfig(
                 provider_id=explicit_pro,
                 model=model,
                 api_key="PRO_ACCOUNT_MANAGED",
                 base_url="https://generativelanguage.googleapis.com",
                 transport="openai_chat",
-                context_length=1048576,
+                context_length=pro_ctx,
+                tags=pro_tags,
             )
-        for vp in get_pro_providers():
-            if any(m["id"] == model for m in vp.get("models", [])):
+        for vp in pro_providers:
+            found = next((m for m in vp.get("models", []) if m.get("id") == model), None)
+            if found is not None:
+                pro_tags = tuple(
+                    resolve_model_capabilities(
+                        model,
+                        provider_id=vp.get("id", "google-antigravity"),
+                        explicit_tags=found.get("tags"),
+                        name=found.get("name"),
+                    )
+                )
+                pro_ctx = found.get("context_window") or found.get("context_length") or infer_context_length(model) or 1048576
                 return CallModelConfig(
                     provider_id=vp.get("id", "google-antigravity"),
                     model=model,
                     api_key="PRO_ACCOUNT_MANAGED",
                     base_url="https://generativelanguage.googleapis.com",
                     transport="openai_chat",
-                    context_length=1048576,
+                    context_length=pro_ctx,
+                    tags=pro_tags,
                 )
     except Exception:
         pass
@@ -200,7 +243,7 @@ def resolve_call_model_config(
         if model == override:
             provider_hint = global_provider_hint
         elif model == session_model:
-            provider_hint = global_provider_hint
+            provider_hint = session_provider_hint or global_provider_hint
         elif model == agent_model:
             provider_hint = agent_provider_hint or global_provider_hint
         else:
@@ -221,6 +264,13 @@ def resolve_call_model_config(
 
     model_entry = next((m for m in pc.models if m.id == model), None)
     configured_context = getattr(model_entry, "context_length", None) if model_entry else None
+    configured_tags = getattr(model_entry, "tags", None) if model_entry else None
+    model_name = getattr(model_entry, "name", None) if model_entry else None
+    effective_tags = (
+        tuple(configured_tags)
+        if configured_tags
+        else tuple(infer_capabilities(model, model_name))
+    )
 
     return CallModelConfig(
         provider_id=pc.id,
@@ -230,6 +280,7 @@ def resolve_call_model_config(
         transport=pc.transport,
         extra_headers=_freeze_headers(pc.extra_headers),
         context_length=configured_context or infer_context_length(model),
+        tags=effective_tags,
     )
 
 

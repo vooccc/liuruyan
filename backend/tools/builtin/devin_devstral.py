@@ -33,6 +33,8 @@ logger = logging.getLogger(__name__)
 API_BASE = "https://server.self-serve.windsurf.com/exa.api_server_pb.ApiServerService"
 AUTH_BASE = "https://server.self-serve.windsurf.com/exa.auth_pb.AuthService"
 DEVIN_APP = "devin"
+DEVIN_APP_VER = "1.48.2"
+DEVIN_LS_VER = "1.9544.35"
 DEVIN_MODEL = "MODEL_SWE_1_6_FAST"
 
 FINAL_FORCE_ANSWER = (
@@ -117,12 +119,12 @@ async def fetch_devin_jwt(api_key: str) -> str:
             return cached_jwt
 
     meta = (
-        _write_string(1, WS_APP)
-        + _write_string(2, WS_APP_VER)
+        _write_string(1, DEVIN_APP)
+        + _write_string(2, DEVIN_APP_VER)
         + _write_string(3, cleaned_key)
         + _write_string(4, "en")
-        + _write_string(7, WS_LS_VER)
-        + _write_string(12, WS_APP)
+        + _write_string(7, DEVIN_LS_VER)
+        + _write_string(12, DEVIN_APP)
         + _write_bytes(30, b"\x00\x01")
     )
     outer = _write_message(1, meta)
@@ -191,14 +193,14 @@ def _build_metadata(api_key: str, jwt: str) -> bytes:
     })
 
     return (
-        _write_string(1, WS_APP)
-        + _write_string(2, WS_APP_VER)
+        _write_string(1, DEVIN_APP)
+        + _write_string(2, DEVIN_APP_VER)
         + _write_string(3, api_key.strip())
         + _write_string(4, "en")
         + _write_string(5, sys_info)
-        + _write_string(7, WS_LS_VER)
+        + _write_string(7, DEVIN_LS_VER)
         + _write_string(8, cpu_info)
-        + _write_string(12, WS_APP)
+        + _write_string(12, DEVIN_APP)
         + _write_string(21, jwt)
         + _write_bytes(30, b"\x00\x01")
     )

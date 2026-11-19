@@ -47,7 +47,10 @@ async def list_models():
                     "provider": vp.get("id"),
                     "provider_name": vp.get("name") or vp.get("id"),
                     "transport": vp.get("transport", "google-antigravity"),
-                    "tags": ["chat", "vision", "tools"],
+                    "tags": list(m.get("tags") or []) or (
+                        (["vision"] if m.get("vision", True) else [])
+                        + (["function_calling"] if m.get("tools", True) else [])
+                    ) or ["chat"],
                     "context_length": m.get("context_window", 1048576),
                     "context_length_source": "configured",
                 })

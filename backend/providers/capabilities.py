@@ -18,7 +18,7 @@
 from __future__ import annotations
 
 import re
-from typing import List, Optional, Set
+from typing import List, Optional, Sequence, Set
 
 
 # 黑名单：embedding / rerank 不参与 function_calling
@@ -45,7 +45,10 @@ _VISION_PATTERNS = [
     re.compile(r"vision", re.IGNORECASE),
     re.compile(r"gpt-4o", re.IGNORECASE),
     re.compile(r"gpt-5", re.IGNORECASE),
+    re.compile(r"gpt-?6", re.IGNORECASE),
     re.compile(r"claude-3", re.IGNORECASE),
+    re.compile(r"claude-4", re.IGNORECASE),
+    re.compile(r"claude-(?:fable|mythos)", re.IGNORECASE),
     re.compile(r"claude.*opus", re.IGNORECASE),
     re.compile(r"claude.*sonnet", re.IGNORECASE),
     re.compile(r"claude.*haiku", re.IGNORECASE),
@@ -53,6 +56,9 @@ _VISION_PATTERNS = [
     re.compile(r"gemini.*flash", re.IGNORECASE),
     re.compile(r"gemini-1\.5", re.IGNORECASE),
     re.compile(r"gemini-2", re.IGNORECASE),
+    re.compile(r"gemini-3", re.IGNORECASE),
+    re.compile(r"gemini-4", re.IGNORECASE),
+    re.compile(r"gemini.*hydrogen", re.IGNORECASE),
     re.compile(r"glm-4v", re.IGNORECASE),
     re.compile(r"qwen.*vl", re.IGNORECASE),
     re.compile(r"qwen2.*vl", re.IGNORECASE),
@@ -205,6 +211,12 @@ def infer_context_length(model_id: str) -> Optional[int]:
         return 200_000
 
     # OpenAI：窗口属于模型本身。chat-latest 等聊天别名保持各自较小窗口。
+    if model_slug in {
+        "gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-6-cyber",
+        "gpt-6.1-sol", "gpt-6.1-terra",
+        "gpt-6.2-astra", "gpt-6.2-sol",
+    }:
+        return 1_050_000
     if "chat-latest" in text:
         return 128_000
     if re.search(r"gpt-5\.(?:4|5|6)(?:\b|-)", text):
@@ -224,4 +236,107 @@ def infer_context_length(model_id: str) -> Optional[int]:
     return None
 
 
-__all__ = ["infer_capabilities", "infer_context_length"]
+def resolve_model_capabilities(
+    model_id: str,
+    provider_id: Optional[str] = None,
+    *,
+    explicit_tags: Optional[Sequence[str]] = None,
+    name: Optional[str] = None,
+) -> List[str]:
+    """解析模型的有效能力标签（以已识别/配置的权威标识为主，缺失时才正则兜底）。
+
+    优先级：
+    1. 显式传入的非空 ``explicit_tags``
+    2. 算力账号虚拟通道中该模型的权威 ``tags`` / ``vision`` 声明
+    3. ``models.json`` 中对应 ``ModelEntry.tags``（非空即权威，不再被正则复筛覆盖）
+    4. 兜底：``infer_capabilities(model_id, name)``
+    """
+    if explicit_tags:
+        return list(explicit_tags)
+    if not model_id:
+        return []
+
+    # 1. 算力账号虚拟通道（如 Google Antigravity）
+    try:
+        from backend.compute_accounts.models_provider import get_pro_providers, is_pro_provider
+
+        pro_providers = get_pro_providers()
+        if provider_id and is_pro_provider(provider_id):
+            pid_l = provider_id.lower()
+            target_vps = [
+                vp for vp in pro_providers
+                if (vp.get("id") or "").lower() == pid_l
+                or (pid_l == "google" and vp.get("id") == "google-antigravity")
+            ] or pro_providers
+        elif not provider_id:
+            target_vps = pro_providers
+        else:
+            target_vps = []
+
+        for vp in target_vps:
+            for pm in vp.get("models", []):
+                if pm.get("id") == model_id:
+                    pm_tags = pm.get("tags")
+                    if pm_tags:
+                        return list(pm_tags)
+                    if "vision" in pm or "tools" in pm:
+                        out_tags: List[str] = []
+                        if pm.get("vision"):
+                            out_tags.append("vision")
+                        if pm.get("tools", True):
+                            out_tags.append("function_calling")
+                        return out_tags or ["chat"]
+    except Exception:
+        pass
+
+    # 2. providers store（models.json 中的 ModelEntry.tags）
+    entry = None
+    try:
+        from .store import load_providers_config_cached
+
+        cfg = load_providers_config_cached()
+        providers = cfg.get("providers") or {}
+        if provider_id:
+            pc = providers.get(provider_id)
+            if pc is not None:
+                entry = next((m for m in pc.models if m.id == model_id), None)
+        else:
+            for pc in providers.values():
+                entry = next((m for m in pc.models if m.id == model_id), None)
+                if entry is not None:
+                    break
+    except Exception:
+        entry = None
+
+    if entry is not None:
+        if entry.tags:
+            return list(entry.tags)
+        if not name and entry.name:
+            name = entry.name
+
+    # 3. 缺失权威标签时，回落到模型 ID / 名称正则推断
+    return infer_capabilities(model_id, name)
+
+
+def model_supports_vision(
+    model_id: str,
+    provider_id: Optional[str] = None,
+    *,
+    explicit_tags: Optional[Sequence[str]] = None,
+    name: Optional[str] = None,
+) -> bool:
+    """便捷判定：模型是否支持视觉能力（优先权威 tags，缺失才正则兜底）。"""
+    return "vision" in resolve_model_capabilities(
+        model_id,
+        provider_id=provider_id,
+        explicit_tags=explicit_tags,
+        name=name,
+    )
+
+
+__all__ = [
+    "infer_capabilities",
+    "infer_context_length",
+    "resolve_model_capabilities",
+    "model_supports_vision",
+]

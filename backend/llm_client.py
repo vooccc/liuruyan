@@ -156,8 +156,8 @@ def _maybe_downgrade_images_for_non_vision_model(
       为文字占位。converter 只看到纯 text，永远不会 emit image_url。
     - vision 模型：原值透传。
 
-    判断依据：`_active_call_config_var` 里 cc.model 经 `backend.providers.capabilities.
-    infer_capabilities` 判 "vision" ∈ caps。
+    判断依据：优先读取 `_active_call_config_var` 里 `cc.tags` 权威能力标签（`"vision" in cc.tags`），
+    仅当 `cc.tags` 缺失时回落 `backend.providers.capabilities.infer_capabilities(cc.model)`。
 
     失败模式：拿不到 cc / model / import 出错 → fail-open（返原值，让下游按老路径走，
     非 vision provider 依然会 400，但至少不会静默把 vision 模型的图片误降级）。
@@ -171,10 +171,15 @@ def _maybe_downgrade_images_for_non_vision_model(
         model_id = getattr(cfg, "model", "") or ""
         if not model_id:
             return text_str, image_blocks  # fail-open: 无 model
-        from backend.providers.capabilities import infer_capabilities
-        caps = infer_capabilities(model_id)
-        if "vision" in caps:
-            return text_str, image_blocks  # vision 模型，透传
+        cfg_tags = getattr(cfg, "tags", None)
+        if cfg_tags:
+            if "vision" in cfg_tags:
+                return text_str, image_blocks  # 权威 tags 声明支持 vision，透传
+        else:
+            from backend.providers.capabilities import infer_capabilities
+            caps = infer_capabilities(model_id)
+            if "vision" in caps:
+                return text_str, image_blocks  # 兼容未携带 tags 的 CallModelConfig
     except Exception:
         return text_str, image_blocks  # fail-open: 判断失败不误杀
 

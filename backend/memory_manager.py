@@ -56,32 +56,63 @@ class ConversationCompressionResult:
     used_fallback: bool = False
 
 
-# ── 安全上限封顶配置（对标生产最佳实践）─────────
+# ── 安全上限封顶配置（按窗口分级 + 支持配置覆盖）─────────
 # 防止 1M/2M 超长上下文无上限线性放大至 70~80 万 token 导致网关 TPM 熔断、
 # 首字延迟暴增（TTFT > 30s）以及本地代理连接解密校验错误（如 bad record MAC）。
-# - 小模型（32k/128k）：按 70% / 80% 动态收缩，严防爆窗；
-# - 超大模型（200k/1M）：在安全上限（默认 70k / 85k）处被精准拦截触发结构化检查点。
+# - 小模型（32k/128k/200k）：按 70% / 80% 动态收缩，并在 70k / 85k 封顶；
+# - 中大窗口（250k~499k，如 262k/400k）：100k / 120k；
+# - 超大窗口（>= 500k，如 500k/1M/1.05M）：175k / 200k（兼顾长窗口续航与代理稳健性）。
 DEFAULT_MAX_SAFE_COMPACT_WARNING = 70_000
 DEFAULT_MAX_SAFE_COMPACT_OVERFLOW = 85_000
+DEFAULT_MEDIUM_SAFE_COMPACT_WARNING = 100_000
+DEFAULT_MEDIUM_SAFE_COMPACT_OVERFLOW = 120_000
+DEFAULT_LARGE_SAFE_COMPACT_WARNING = 175_000
+DEFAULT_LARGE_SAFE_COMPACT_OVERFLOW = 200_000
+
+
+def _read_configured_compact_ceiling() -> Optional[int]:
+    """读取环境变量覆盖的上下文压缩上限（LIURUYAN_MAX_COMPACT_THRESHOLD）。"""
+    env_val = (os.getenv("LIURUYAN_MAX_COMPACT_THRESHOLD") or "").strip()
+    if env_val.isdigit() and int(env_val) > 0:
+        return int(env_val)
+    return None
 
 
 def resolve_conversation_thresholds(
     context_length: Optional[int] = None,
     max_ceiling: Optional[int] = None,
 ) -> Tuple[int, int]:
-    """按当前模型窗口计算自动压缩阈值；兼顾小模型自适应与大模型物理/TPM安全封顶。"""
+    """按当前模型窗口计算自动压缩阈值；兼顾小模型自适应与大模型分级安全封顶。"""
     if isinstance(context_length, int) and context_length > 0:
-        ceiling = max_ceiling
-        if ceiling is None:
-            env_val = (os.getenv("LIURUYAN_MAX_COMPACT_THRESHOLD") or "").strip()
-            ceiling = int(env_val) if env_val.isdigit() and int(env_val) > 0 else DEFAULT_MAX_SAFE_COMPACT_OVERFLOW
+        ceiling = max_ceiling if (isinstance(max_ceiling, int) and max_ceiling > 0) else _read_configured_compact_ceiling()
+        if ceiling is not None:
+            ratio = (
+                DEFAULT_MAX_SAFE_COMPACT_WARNING / DEFAULT_MAX_SAFE_COMPACT_OVERFLOW
+                if ceiling <= DEFAULT_MAX_SAFE_COMPACT_OVERFLOW
+                else 0.875
+            )
+            warning_ceiling = int(ceiling * ratio)
+        elif context_length >= 500_000:
+            ceiling = DEFAULT_LARGE_SAFE_COMPACT_OVERFLOW
+            warning_ceiling = DEFAULT_LARGE_SAFE_COMPACT_WARNING
+        elif context_length >= 250_000:
+            ceiling = DEFAULT_MEDIUM_SAFE_COMPACT_OVERFLOW
+            warning_ceiling = DEFAULT_MEDIUM_SAFE_COMPACT_WARNING
+        else:
+            ceiling = DEFAULT_MAX_SAFE_COMPACT_OVERFLOW
+            warning_ceiling = DEFAULT_MAX_SAFE_COMPACT_WARNING
 
-        warning_ratio = DEFAULT_MAX_SAFE_COMPACT_WARNING / DEFAULT_MAX_SAFE_COMPACT_OVERFLOW
-        warning_ceiling = int(ceiling * warning_ratio)
         warning = min(int(context_length * 0.70), warning_ceiling)
         overflow = min(int(context_length * 0.80), ceiling)
         return warning, overflow
     return CONVERSATION_WARNING_TOKENS, CONVERSATION_MAX_TOKENS
+
+
+def resolve_keep_recent_token_budget(overflow_threshold: Optional[int] = None) -> int:
+    """按当前压缩上限动态缩放保留近期窗口的 token 预算（默认 25k，200k 档放宽至 40k）。"""
+    if isinstance(overflow_threshold, int) and overflow_threshold > 100_000:
+        return min(50_000, max(CONVERSATION_KEEP_RECENT_TOKEN_BUDGET, int(overflow_threshold * 0.20)))
+    return CONVERSATION_KEEP_RECENT_TOKEN_BUDGET
 
 # ── fix②（2026-06-09，压缩改 token 维度）─────────────────────────────
 # 体检（_context_audit.py）坐实根因②：压缩"保留最近 N 条"是纯条数闸，若这
@@ -99,6 +130,9 @@ CONVERSATION_KEEP_RECENT_MIN = 4
 HISTORY_SLIM_PROTECT_RECENT = 4
 HISTORY_SLIM_INTERMEDIATE_RECENT = 10
 HISTORY_TOOL_RESULT_MAX_TOKENS = 1_200
+HISTORY_TIER2_MESSAGE_MAX_TOKENS = 8_000
+HISTORY_TIER2_TOOL_USE_MESSAGE_MAX_TOKENS = 6_000
+HISTORY_TIER1_GIANT_MESSAGE_MAX_TOKENS = 40_000
 HISTORY_MICROCOMPACT_MIN_SAVINGS = 100  # 本身小于 100 token 的微型输出不处理，避免越清空越长
 HISTORY_TOOL_RESULT_CLEARED_MARKER = (
     "[历史工具输出已清空：调用已成功执行，详细结果已在本地 transcript 归档。]"
@@ -361,10 +395,8 @@ def _slim_tool_result_text(text: str, max_tokens: int) -> str:
     if original_tokens <= max_tokens:
         return text
 
-    lines = text.split('\n')
-    if len(lines) <= 2:
-        # 单行或超短行大字符串兜底
-        char_budget = max_tokens * 3
+    def _char_slice_fallback() -> str:
+        char_budget = max(120, max_tokens * 3)
         head_chars = max(30, int(char_budget * 0.25))
         tail_chars = max(50, char_budget - head_chars)
         marker = (
@@ -375,6 +407,10 @@ def _slim_tool_result_text(text: str, max_tokens: int) -> str:
         if len(text) > head_chars + tail_chars + len(marker):
             return text[:head_chars] + marker + text[-tail_chars:]
         return text
+
+    lines = text.split('\n')
+    if len(lines) <= 2:
+        return _char_slice_fallback()
 
     # 预留 marker 预算
     marker_estimate_tokens = 50
@@ -412,7 +448,10 @@ def _slim_tool_result_text(text: str, max_tokens: int) -> str:
         f"需要时用 session_search 召回。...]\n\n"
     )
 
-    return '\n'.join(head_lines) + marker + '\n'.join(tail_lines)
+    result = '\n'.join(head_lines) + marker + '\n'.join(tail_lines)
+    if estimate_tokens(result) > max_tokens:
+        return _char_slice_fallback()
+    return result
 
 
 def _microcompact_tool_result_text(
@@ -479,24 +518,199 @@ def _slim_tool_use_input(inp: Any) -> Any:
     return new_inp if modified else inp
 
 
+def _estimate_tool_use_payload_tokens(entry: Dict[str, Any]) -> int:
+    """估算 assistant 消息中 tool_use / tool_calls 参数占用的 token 数。"""
+    total = 0
+    content = entry.get("content")
+    if isinstance(content, list):
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "tool_use":
+                inp = block.get("input")
+                if isinstance(inp, str):
+                    total += estimate_tokens(inp)
+                elif isinstance(inp, dict):
+                    for v in inp.values():
+                        total += estimate_tokens(v if isinstance(v, str) else json.dumps(v, ensure_ascii=False))
+    tool_calls = entry.get("tool_calls")
+    if isinstance(tool_calls, list):
+        for call in tool_calls:
+            if isinstance(call, dict) and isinstance(call.get("function"), dict):
+                raw_args = call["function"].get("arguments")
+                if isinstance(raw_args, str):
+                    total += estimate_tokens(raw_args)
+    return total
+
+
+def _estimate_user_tool_result_tokens(entry: Dict[str, Any]) -> int:
+    """估算 user 消息中 tool_result 块占用的文本 token 数。"""
+    content = entry.get("content")
+    if not isinstance(content, list):
+        return 0
+    total = 0
+    for block in content:
+        if not isinstance(block, dict) or block.get("type") != "tool_result":
+            continue
+        tr = block.get("content", "")
+        if isinstance(tr, str):
+            total += estimate_tokens(tr)
+        elif isinstance(tr, list):
+            for inner in tr:
+                if isinstance(inner, dict) and inner.get("type") == "text" and isinstance(inner.get("text"), str):
+                    total += estimate_tokens(inner["text"])
+    return total
+
+
+def _slim_assistant_tool_use_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
+    """对 assistant 消息中的 tool_use / tool_calls 大代码参数做脱水；无改动时原样返回。"""
+    content = entry.get("content")
+    if isinstance(content, list):
+        new_blocks = None
+        for b_idx, block in enumerate(content):
+            if isinstance(block, dict) and block.get("type") == "tool_use":
+                inp = block.get("input")
+                slimmed_inp = _slim_tool_use_input(inp)
+                if slimmed_inp is not inp and slimmed_inp != inp:
+                    if new_blocks is None:
+                        new_blocks = list(content)
+                    new_blocks[b_idx] = {**block, "input": slimmed_inp}
+        if new_blocks is not None:
+            return {**entry, "content": new_blocks}
+
+    tool_calls = entry.get("tool_calls")
+    if isinstance(tool_calls, list):
+        new_calls = None
+        for c_idx, call in enumerate(tool_calls):
+            if isinstance(call, dict) and isinstance(call.get("function"), dict):
+                fn = call["function"]
+                raw_args = fn.get("arguments")
+                if isinstance(raw_args, str) and len(raw_args) > 120:
+                    try:
+                        parsed = json.loads(raw_args)
+                        if isinstance(parsed, dict):
+                            slimmed = _slim_tool_use_input(parsed)
+                            if slimmed != parsed:
+                                if new_calls is None:
+                                    new_calls = list(tool_calls)
+                                new_fn = {**fn, "arguments": json.dumps(slimmed, ensure_ascii=False)}
+                                new_calls[c_idx] = {**call, "function": new_fn}
+                    except Exception:
+                        pass
+        if new_calls is not None:
+            return {**entry, "tool_calls": new_calls}
+
+    return entry
+
+
+def _apply_tier_to_user_blocks(
+    content: List[Any],
+    block_budgets: Dict[int, Tuple[int, int]],
+) -> Optional[List[Any]]:
+    """按 block 级 (tier, max_tokens) 预算对 user content 列表中的 tool_result 做瘦身。"""
+    new_blocks: Optional[List[Any]] = None
+    for b_idx, (b_tier, b_limit) in block_budgets.items():
+        block = content[b_idx]
+        tr = block.get("content", "")
+        if isinstance(tr, str):
+            slimmed = _microcompact_tool_result_text(tr, b_tier, b_limit)
+            if slimmed is not tr and slimmed != tr:
+                if new_blocks is None:
+                    new_blocks = list(content)
+                new_blocks[b_idx] = {**block, "content": slimmed}
+        elif isinstance(tr, list):
+            inner_new = None
+            for i_idx, inner in enumerate(tr):
+                if (
+                    isinstance(inner, dict)
+                    and inner.get("type") == "text"
+                    and isinstance(inner.get("text"), str)
+                ):
+                    slimmed = _microcompact_tool_result_text(inner["text"], b_tier, b_limit)
+                    if slimmed != inner["text"]:
+                        if inner_new is None:
+                            inner_new = list(tr)
+                        inner_new[i_idx] = {**inner, "text": slimmed}
+            if inner_new is not None:
+                if new_blocks is None:
+                    new_blocks = list(content)
+                new_blocks[b_idx] = {**block, "content": inner_new}
+    return new_blocks
+
+
+def _slim_user_tool_result_entry(
+    entry: Dict[str, Any],
+    tier: int,
+    max_result_tokens: int,
+    max_message_tokens: int,
+) -> Dict[str, Any]:
+    """对 user content=list[tool_result] 做单块 + 整条消息总预算双重控制。"""
+    content = entry.get("content")
+    if not isinstance(content, list):
+        return entry
+
+    tr_indices = [
+        b_idx
+        for b_idx, block in enumerate(content)
+        if isinstance(block, dict) and block.get("type") == "tool_result"
+    ]
+    if not tr_indices:
+        return entry
+
+    first_pass_budgets = {b_idx: (tier, max_result_tokens) for b_idx in tr_indices}
+    new_blocks = _apply_tier_to_user_blocks(content, first_pass_budgets)
+    candidate = {**entry, "content": new_blocks} if new_blocks is not None else entry
+
+    # 多并发工具包（如单条消息含 30~111 个 tool_result）：即使单块截到 1200 tokens，
+    # 整条仍可达数万~十余万 tokens。Tier 2 / Tier 1 巨载荷保护下必须再受整条消息总预算约束。
+    if tier != 3 and max_message_tokens > 0 and len(tr_indices) > 1:
+        total_after = _estimate_user_tool_result_tokens(candidate)
+        if total_after > max_message_tokens:
+            per_block = max_message_tokens // len(tr_indices)
+            if per_block >= 250:
+                second_budgets = {
+                    b_idx: (2, min(max_result_tokens, per_block))
+                    for b_idx in tr_indices
+                }
+            else:
+                # 极多并发块：保留靠后若干块的首尾摘要，更早块走 Tier 3 紧凑归档标记
+                marker_cost = 35
+                tail_budget_each = 400
+                tail_keep = max(
+                    1,
+                    (max_message_tokens - len(tr_indices) * marker_cost) // tail_budget_each,
+                )
+                cutoff = max(0, len(tr_indices) - tail_keep)
+                second_budgets = {
+                    b_idx: (3, max_result_tokens) if pos < cutoff else (2, min(max_result_tokens, tail_budget_each))
+                    for pos, b_idx in enumerate(tr_indices)
+                }
+            tightened_blocks = _apply_tier_to_user_blocks(content, second_budgets)
+            if tightened_blocks is not None:
+                return {**entry, "content": tightened_blocks}
+
+    return candidate
+
+
 def slim_history_tool_results(
     history: List[Dict[str, Any]],
     max_result_tokens: int = HISTORY_TOOL_RESULT_MAX_TOKENS,
     protect_recent: int = HISTORY_SLIM_PROTECT_RECENT,
     intermediate_recent: int = HISTORY_SLIM_INTERMEDIATE_RECENT,
+    max_tier2_message_tokens: int = HISTORY_TIER2_MESSAGE_MAX_TOKENS,
+    max_tier2_tool_use_tokens: int = HISTORY_TIER2_TOOL_USE_MESSAGE_MAX_TOKENS,
+    max_tier1_giant_message_tokens: int = HISTORY_TIER1_GIANT_MESSAGE_MAX_TOKENS,
 ) -> List[Dict[str, Any]]:
     """对"发给模型的历史副本"里的旧 tool_result 及 tool_use 参数进行阶梯式瘦身与微压缩（Microcompact）。
 
     工业界上下文微压缩实践：
-    - 最近 protect_recent 条消息：Tier 1 原汁原味完整保留（模型写代码需依赖最新上下文）；
-    - 4 ~ intermediate_recent 条消息：Tier 2 截断至 max_result_tokens，保留前置关键信息；
+    - 最近 protect_recent 条消息：Tier 1 原文保护（最后 1 条无条件原样保留；其余非末条仅在单条超巨型载荷时做安全护栏）；
+    - protect_recent ~ intermediate_recent 条消息：Tier 2 单块截断至 max_result_tokens 且受整条多块总预算约束，同时对巨型 tool_use 参数脱水；
     - 超过 intermediate_recent 条消息：Tier 3 彻底微压缩清空（Microcompact Cleared），消除长会话中
       累积的陈旧工具巨量占用；同时对 assistant 的 tool_use 参数做长代码脱水，解除老轮次对上下文的占用。
 
     保证：
     - 不修改盘上 transcript（只返回新 list，原 entry/block 浅拷贝后改）。
     - 不影响前端展示（前端走独立 SSE / 读盘路径）。
-    - 最近 ``protect_recent`` 条不动 —— 模型完整看到最新工具输出能据此动手。
+    - 最近 ``protect_recent`` 条常规输出不动 —— 模型完整看到最新工具输出能据此动手。
     - 图片等非 text block 原样保留。
     - 兼容 Anthropic content blocks 与 OpenAI role="tool" 消息格式。
 
@@ -518,56 +732,45 @@ def slim_history_tool_results(
             tier = 3
 
         if tier == 1:
-            out.append(entry)
-            continue
-
-        # 0. 兼容 assistant 角色：Tier 3 下对陈旧 tool_use 参数进行长代码/巨载荷脱水
-        if entry.get("role") == "assistant":
-            if tier != 3:
+            # 最新一条（dist == 0）无条件原样保留；其余 Tier 1 条目仅在单条自身超巨型安全限（如 40k+）时兜底瘦身
+            if dist == 0 or max_tier1_giant_message_tokens <= 0:
                 out.append(entry)
                 continue
+            role_t1 = entry.get("role")
+            if role_t1 == "assistant":
+                if _estimate_tool_use_payload_tokens(entry) > max_tier1_giant_message_tokens:
+                    out.append(_slim_assistant_tool_use_entry(entry))
+                else:
+                    out.append(entry)
+                continue
+            if role_t1 == "tool":
+                tr = entry.get("content", "")
+                if isinstance(tr, str) and estimate_tokens(tr) > max_tier1_giant_message_tokens:
+                    slimmed = _microcompact_tool_result_text(tr, 2, max(max_result_tokens, max_tier1_giant_message_tokens // 2))
+                    out.append({**entry, "content": slimmed} if slimmed != tr else entry)
+                else:
+                    out.append(entry)
+                continue
+            if _estimate_user_tool_result_tokens(entry) > max_tier1_giant_message_tokens:
+                out.append(_slim_user_tool_result_entry(
+                    entry,
+                    2,
+                    max(max_result_tokens, 4_000),
+                    max(max_tier2_message_tokens, max_tier1_giant_message_tokens // 2),
+                ))
+            else:
+                out.append(entry)
+            continue
 
-            # a. Anthropic content blocks: [{"type": "tool_use", "id": "...", "input": {...}}]
-            content = entry.get("content")
-            if isinstance(content, list):
-                new_blocks = None
-                for b_idx, block in enumerate(content):
-                    if isinstance(block, dict) and block.get("type") == "tool_use":
-                        inp = block.get("input")
-                        slimmed_inp = _slim_tool_use_input(inp)
-                        if slimmed_inp is not inp and slimmed_inp != inp:
-                            if new_blocks is None:
-                                new_blocks = list(content)
-                            new_blocks[b_idx] = {**block, "input": slimmed_inp}
-                if new_blocks is not None:
-                    out.append({**entry, "content": new_blocks})
-                    continue
-
-            # b. OpenAI tool_calls: [{"id": "...", "function": {"name": "...", "arguments": "{...}"}}]
-            tool_calls = entry.get("tool_calls")
-            if isinstance(tool_calls, list):
-                new_calls = None
-                for c_idx, call in enumerate(tool_calls):
-                    if isinstance(call, dict) and isinstance(call.get("function"), dict):
-                        fn = call["function"]
-                        raw_args = fn.get("arguments")
-                        if isinstance(raw_args, str) and len(raw_args) > 120:
-                            try:
-                                parsed = json.loads(raw_args)
-                                if isinstance(parsed, dict):
-                                    slimmed = _slim_tool_use_input(parsed)
-                                    if slimmed != parsed:
-                                        if new_calls is None:
-                                            new_calls = list(tool_calls)
-                                        new_fn = {**fn, "arguments": json.dumps(slimmed, ensure_ascii=False)}
-                                        new_calls[c_idx] = {**call, "function": new_fn}
-                            except Exception:
-                                pass
-                if new_calls is not None:
-                    out.append({**entry, "tool_calls": new_calls})
-                    continue
-
-            out.append(entry)
+        # 0. 兼容 assistant 角色：Tier 3 全量脱水；Tier 2 仅当单条工具入参超预算时脱水
+        if entry.get("role") == "assistant":
+            if tier == 2 and (
+                max_tier2_tool_use_tokens <= 0
+                or _estimate_tool_use_payload_tokens(entry) <= max_tier2_tool_use_tokens
+            ):
+                out.append(entry)
+                continue
+            out.append(_slim_assistant_tool_use_entry(entry))
             continue
 
         # 1. 兼容 OpenAI 格式：{"role": "tool", "content": "..."}
@@ -582,46 +785,113 @@ def slim_history_tool_results(
             continue
 
         # 2. 兼容 Anthropic v3 格式：{"role": "user", "content": [{"type": "tool_result", ...}]}
-        content = entry.get("content")
-        if not isinstance(content, list):
-            out.append(entry)
-            continue
-
-        new_blocks = None  # 惰性拷贝：没改动就不建新对象
-        for b_idx, block in enumerate(content):
-            if not isinstance(block, dict) or block.get("type") != "tool_result":
-                continue
-            tr = block.get("content", "")
-            if isinstance(tr, str):
-                slimmed = _microcompact_tool_result_text(tr, tier, max_result_tokens)
-                if slimmed is not tr and slimmed != tr:
-                    if new_blocks is None:
-                        new_blocks = list(content)
-                    new_blocks[b_idx] = {**block, "content": slimmed}
-            elif isinstance(tr, list):
-                # list 形态：只瘦其中的 text block，图片等原样
-                inner_new = None
-                for i_idx, inner in enumerate(tr):
-                    if (
-                        isinstance(inner, dict)
-                        and inner.get("type") == "text"
-                        and isinstance(inner.get("text"), str)
-                    ):
-                        slimmed = _microcompact_tool_result_text(inner["text"], tier, max_result_tokens)
-                        if slimmed != inner["text"]:
-                            if inner_new is None:
-                                inner_new = list(tr)
-                            inner_new[i_idx] = {**inner, "text": slimmed}
-                if inner_new is not None:
-                    if new_blocks is None:
-                        new_blocks = list(content)
-                    new_blocks[b_idx] = {**block, "content": inner_new}
-
-        if new_blocks is not None:
-            out.append({**entry, "content": new_blocks})
-        else:
-            out.append(entry)
+        out.append(_slim_user_tool_result_entry(entry, tier, max_result_tokens, max_tier2_message_tokens))
     return out
+
+
+def _estimate_json_value_tokens(val: Any) -> int:
+    """估算单个 JSON 字段值（如 tool_use input 的某个参数值）的 token，避免整包二次转义膨胀。"""
+    if val is None:
+        return 1
+    if isinstance(val, str):
+        return estimate_tokens(val)
+    if isinstance(val, (int, float, bool)):
+        return 2
+    if isinstance(val, dict):
+        total = 4
+        for k, v in val.items():
+            total += estimate_tokens(str(k)) + _estimate_json_value_tokens(v) + 3
+        return total
+    if isinstance(val, list):
+        return 2 + sum(_estimate_json_value_tokens(item) + 1 for item in val)
+    return estimate_tokens(str(val))
+
+
+def estimate_message_tokens(msg: Any) -> int:
+    """按模型真实可见内容估算单条历史消息的 token 数。
+
+    与旧版 ``estimate_tokens(json.dumps(msg))`` 的关键区别：
+    1. 跳过不回传或非文本上下文载荷（``thinking`` 块、``thought_signature``、
+       ``timestamp`` / ``client_id`` / ``message_seq`` 等 UI 元数据）；
+    2. 对图片块（``image`` / ``image_url`` / ``image_ref`` / ``document``）按固定开销计，
+       避免 base64 字符串被当正文算成数十万 token；
+    3. 不对外层做 ``json.dumps`` 序列化，消除代码块内 ``\\n`` / ``\\"`` / ``\\\\``
+       双重转义造成的 30%~80% 虚高膨胀。
+    """
+    if not isinstance(msg, dict):
+        return estimate_tokens(str(msg)) if msg else 0
+
+    total = 11  # role + 消息包装结构开销（与纯文本消息 json.dumps 结构对齐）
+    content = msg.get("content")
+    if isinstance(content, str):
+        total += estimate_tokens(content)
+    elif isinstance(content, list):
+        for block in content:
+            if isinstance(block, str):
+                total += estimate_tokens(block)
+                continue
+            if not isinstance(block, dict):
+                continue
+            btype = block.get("type")
+            if btype == "thinking":
+                continue
+            if btype == "text":
+                total += estimate_tokens(block.get("text") or "")
+            elif btype in ("image", "image_url", "image_ref", "document"):
+                total += 333
+            elif btype == "tool_use":
+                total += 8 + estimate_tokens(str(block.get("name") or ""))
+                total += _estimate_json_value_tokens(block.get("input"))
+            elif btype == "tool_result":
+                total += 8
+                tr = block.get("content", "")
+                if isinstance(tr, str):
+                    total += estimate_tokens(tr)
+                elif isinstance(tr, list):
+                    for inner in tr:
+                        if isinstance(inner, dict):
+                            itype = inner.get("type")
+                            if itype == "text":
+                                total += estimate_tokens(inner.get("text") or "")
+                            elif itype in ("image", "image_url", "image_ref", "document"):
+                                total += 333
+                            else:
+                                total += _estimate_json_value_tokens(inner)
+                        elif isinstance(inner, str):
+                            total += estimate_tokens(inner)
+                elif tr is not None:
+                    total += _estimate_json_value_tokens(tr)
+            else:
+                total += _estimate_json_value_tokens(block)
+    elif content is not None:
+        total += _estimate_json_value_tokens(content)
+
+    tool_calls = msg.get("tool_calls")
+    if isinstance(tool_calls, list):
+        for call in tool_calls:
+            if not isinstance(call, dict):
+                continue
+            fn = call.get("function")
+            if isinstance(fn, dict):
+                total += 8 + estimate_tokens(str(fn.get("name") or ""))
+                raw_args = fn.get("arguments")
+                if isinstance(raw_args, str):
+                    try:
+                        parsed_args = json.loads(raw_args)
+                        total += _estimate_json_value_tokens(parsed_args)
+                    except Exception:
+                        total += estimate_tokens(raw_args)
+                elif raw_args is not None:
+                    total += _estimate_json_value_tokens(raw_args)
+
+    return total
+
+
+def estimate_history_tokens(history: List[Dict[str, Any]]) -> int:
+    """估算整段对话历史对模型实际可见的 token 总量。"""
+    if not history:
+        return 0
+    return sum(estimate_message_tokens(msg) for msg in history)
 
 
 def resolve_keep_recent_by_tokens(
@@ -656,7 +926,7 @@ def resolve_keep_recent_by_tokens(
     for msg in reversed(messages):
         if kept >= cap:
             break
-        used += estimate_tokens(json.dumps(msg, ensure_ascii=False))
+        used += estimate_message_tokens(msg)
         # 已超预算且已满足地板 → 停在这里（不含当前这条）。
         if used > token_budget and kept >= eff_floor:
             break
@@ -1117,8 +1387,7 @@ class MemoryManager:
                 "suggested_action": str  # "none" | "trim_old" | "summarize"
             }
         """
-        history_text = json.dumps(history, ensure_ascii=False)
-        tokens = estimate_tokens(history_text)
+        tokens = estimate_history_tokens(history)
         warning_tokens, max_tokens = resolve_conversation_thresholds(context_length)
 
         if tokens > max_tokens:
@@ -1146,8 +1415,8 @@ class MemoryManager:
                 "suggested_action": "none",
             }
 
-    def _format_history_for_summary(self, messages: List[Dict[str, str]]) -> str:
-        """把待压缩的历史消息整理成适合摘要的纯文本。"""
+    def _format_history_for_summary(self, messages: List[Dict[str, Any]]) -> str:
+        """把待压缩的历史消息整理成适合摘要的纯文本（跳过 thinking 等冗余结构）。"""
         lines = []
         for idx, msg in enumerate(messages, 1):
             role = msg.get("role", "user")
@@ -1155,11 +1424,53 @@ class MemoryManager:
                 "user": "用户",
                 "assistant": "助手",
                 "system": "系统",
+                "tool": "工具",
             }.get(role, role)
-            content = msg.get("content", "")
-            if not isinstance(content, str):
-                content = str(content)
-            content = content.strip()
+            raw_content = msg.get("content", "")
+            if isinstance(raw_content, str):
+                content = raw_content.strip()
+            elif isinstance(raw_content, list):
+                parts: List[str] = []
+                for block in raw_content:
+                    if isinstance(block, str):
+                        if block.strip():
+                            parts.append(block.strip())
+                        continue
+                    if not isinstance(block, dict):
+                        continue
+                    btype = block.get("type")
+                    if btype == "thinking":
+                        continue
+                    if btype == "text":
+                        txt = str(block.get("text") or "").strip()
+                        if txt:
+                            parts.append(txt)
+                    elif btype == "tool_use":
+                        name = str(block.get("name") or "tool")
+                        inp = block.get("input")
+                        hint = ""
+                        if isinstance(inp, dict):
+                            for k in ("path", "TargetFile", "file_path", "command", "query", "pattern"):
+                                if inp.get(k):
+                                    hint = f" {k}={str(inp[k])[:80]}"
+                                    break
+                        parts.append(f"[调用工具 {name}{hint}]")
+                    elif btype == "tool_result":
+                        tr = block.get("content", "")
+                        if isinstance(tr, list):
+                            tr = " ".join(
+                                str(b.get("text") or "")
+                                for b in tr
+                                if isinstance(b, dict) and b.get("type") == "text"
+                            )
+                        tr_s = str(tr or "").strip().replace("\n", " ")
+                        if len(tr_s) > 240:
+                            tr_s = tr_s[:240] + "..."
+                        if tr_s:
+                            parts.append(f"[工具返回] {tr_s}")
+                content = "\n".join(parts).strip()
+            else:
+                content = str(raw_content).strip()
             if not content:
                 continue
             lines.append(f"[{idx}] {role_label}: {content}")
@@ -1250,13 +1561,14 @@ class MemoryManager:
         *,
         prior_summary: Optional[str] = None,
         original_non_system_count: Optional[int] = None,
+        token_budget: Optional[int] = None,
     ) -> ConversationCompressionResult:
         """压缩旧消息并返回可持久化的摘要边界元数据。
 
         fix②（2026-06-09）：``keep_recent`` 不再是纯条数。先用
         ``resolve_keep_recent_by_tokens`` 按 token 预算把"最近 N 条"收紧到不爆窗
         （条数上限仍是传入的 ``keep_recent``，地板 CONVERSATION_KEEP_RECENT_MIN），
-        再据此切 older/recent，避免"20 条里几条巨型 tool_result"压完仍 >> 窗口。
+        再据此切 older/recent，避免\"20 条里几条巨型 tool_result\"压完仍 >> 窗口。
 
         ``prior_summary`` 是已经持久化的旧检查点。它只作为摘要输入，不与新摘要
         同时留在模型上下文里，避免每次压缩多叠一层 system message。
@@ -1271,20 +1583,46 @@ class MemoryManager:
             else None
         )
 
+        eff_budget = (
+            token_budget
+            if isinstance(token_budget, int) and token_budget > 0
+            else CONVERSATION_KEEP_RECENT_TOKEN_BUDGET
+        )
+
+        def _slim_giant_retained_tail(tail_msgs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+            # 若保留区（如 floor=4）仍因巨型多块工具输出超预算，仅对内存副本做安全瘦身，
+            # 防止压完后水位依然卡在阈值之上造成连环重压。
+            if len(tail_msgs) <= 1 or estimate_history_tokens(tail_msgs) <= int(eff_budget * 1.5):
+                return tail_msgs
+            return slim_history_tool_results(
+                tail_msgs,
+                max_result_tokens=800,
+                protect_recent=1,
+                intermediate_recent=2,
+                max_tier2_message_tokens=4_000,
+                max_tier2_tool_use_tokens=3_000,
+                max_tier1_giant_message_tokens=max(8_000, eff_budget // 2),
+            )
+
         # token 维度收紧"最近窗口"——条数上限 keep_recent，但 token 超预算就少留几条。
-        effective_keep = resolve_keep_recent_by_tokens(non_system, keep_recent)
+        effective_keep = resolve_keep_recent_by_tokens(
+            non_system,
+            keep_recent,
+            token_budget=eff_budget,
+        )
         if len(non_system) <= effective_keep:
+            safe_tail = _slim_giant_retained_tail(non_system)
             preserved = list(system_msgs)
             if prior_message is not None:
                 preserved.append(prior_message)
-            preserved.extend(non_system)
+            preserved.extend(safe_tail)
             return ConversationCompressionResult(
                 history=preserved,
-                recent_non_system_count=len(non_system),
+                recent_non_system_count=len(safe_tail),
             )
 
         older_messages = non_system[:-effective_keep]
-        recent_messages = non_system[-effective_keep:]
+        recent_messages = _slim_giant_retained_tail(non_system[-effective_keep:])
         summary_source = list(older_messages)
         if prior_message is not None:
             summary_source.insert(0, {
@@ -1296,7 +1634,7 @@ class MemoryManager:
 
         def fallback_result() -> ConversationCompressionResult:
             trimmed = self.trim_conversation_history(
-                history,
+                system_msgs + older_messages + recent_messages,
                 keep_recent=effective_keep,
             )
             if prior_message is not None:
@@ -1314,34 +1652,39 @@ class MemoryManager:
         if not older_text:
             return fallback_result()
 
-        response = await llm_client.chat_completion_async([
-            {
-                "role": "system",
-                "content": (
-                    "你是一个对话上下文压缩器。你的任务不是继续聊天，而是把较早对话压成结构化摘要，"
-                    "供同一个角色稍后继续回答用户。请严格输出 JSON，不要输出额外解释。"
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    "请压缩下面的较早对话，生成一个结构化摘要。\n\n"
-                    "要求：\n"
-                    "1. 只总结已经发生过的内容，不新增推测。\n"
-                    "2. 优先保留：当前任务、用户明确提出的事实、重要决定、情绪/关系变化、未完成事项。\n"
-                    "3. 不要复述无关闲聊，不要逐句重写。\n"
-                    "4. 输出必须是 JSON，字段如下：\n"
-                    "{\n"
-                    '  "active_task": "一句话说明当前仍在推进的任务或主题，没有则写未明确",\n'
-                    '  "key_facts": ["最多5条关键事实"],\n'
-                    '  "decisions": ["最多4条已经做出的决定或结论"],\n'
-                    '  "emotional_state": "一句话概括情绪、关系或互动状态",\n'
-                    '  "open_threads": ["最多4条仍未完成或后续可能继续的话题"]\n'
-                    "}\n\n"
-                    f"待压缩对话：\n{older_text}\n"
-                ),
-            },
-        ])
+        try:
+            response = await llm_client.chat_completion_async([
+                {
+                    "role": "system",
+                    "content": (
+                        "你是一个对话上下文压缩器。你的任务不是继续聊天，而是把较早对话压成结构化摘要，"
+                        "供同一个角色稍后继续回答用户。请严格输出 JSON，不要输出额外解释。"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        "请压缩下面的较早对话，生成一个结构化摘要。\n\n"
+                        "要求：\n"
+                        "1. 只总结已经发生过的内容，不新增推测。\n"
+                        "2. 优先保留：当前任务、用户明确提出的事实、重要决定、情绪/关系变化、未完成事项。\n"
+                        "3. 不要复述无关闲聊，不要逐句重写。\n"
+                        "4. 输出必须是 JSON，字段如下：\n"
+                        "{\n"
+                        '  "active_task": "一句话说明当前仍在推进的任务或主题，没有则写未明确",\n'
+                        '  "key_facts": ["最多5条关键事实"],\n'
+                        '  "decisions": ["最多4条已经做出的决定或结论"],\n'
+                        '  "emotional_state": "一句话概括情绪、关系或互动状态",\n'
+                        '  "open_threads": ["最多4条仍未完成或后续可能继续的话题"]\n'
+                        "}\n\n"
+                        f"待压缩对话：\n{older_text}\n"
+                    ),
+                },
+            ])
+        except Exception as exc:
+            logger.warning("[MemoryManager] 上下文摘要调用失败，降级为裁剪兜底: %s", exc)
+            return fallback_result()
+
         summary = self._extract_summary_json(response.get("content", ""))
         if not summary:
             return fallback_result()

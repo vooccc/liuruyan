@@ -22,7 +22,11 @@ from .config import get_config_loader
 from .memory_manager import (
     get_memory_manager,
     estimate_tokens,
+    estimate_history_tokens,
     slim_history_tool_results,
+    resolve_keep_recent_token_budget,
+    CONVERSATION_KEEP_RECENT_MIN,
+    CONVERSATION_KEEP_RECENT_TOKEN_BUDGET,
     CONVERSATION_KEEP_RECENT_WARNING,
     CONVERSATION_KEEP_RECENT_OVERFLOW,
 )
@@ -955,6 +959,37 @@ class Agent:
         elif overflow["status"] == "warning":
             keep_recent = CONVERSATION_KEEP_RECENT_WARNING
 
+        keep_budget = resolve_keep_recent_token_budget(overflow.get("threshold_max"))
+        non_system_tail_count = sum(1 for item in slimmed_tail if item.get("role") != "system")
+
+        # Rapid Refill 冷却 + 空转保护：
+        # 1) 刚压缩过不到 2 轮（新增 < 4 条非 system 消息）时，不再在 warning 线重复压；
+        # 2) 若尾部消息数 <= CONVERSATION_KEEP_RECENT_MIN（没有旧消息可摘要）且处于真实大载荷场景，
+        #    改为对除最新一条外的旧工具载荷做内存中安全瘦身，绝不空转触发假压缩通知。
+        if keep_recent is not None:
+            prev_recent_count = (checkpoint or {}).get("recent_non_system_count")
+            if (
+                overflow["status"] == "warning"
+                and isinstance(prev_recent_count, int)
+                and prev_recent_count > 0
+                and (non_system_tail_count - prev_recent_count) < 4
+            ):
+                keep_recent = None
+            elif (
+                non_system_tail_count <= CONVERSATION_KEEP_RECENT_MIN
+                and int(overflow.get("tokens") or 0) > CONVERSATION_KEEP_RECENT_TOKEN_BUDGET
+            ):
+                history = slim_history_tool_results(
+                    history_tail,
+                    max_result_tokens=800,
+                    protect_recent=1,
+                    intermediate_recent=2,
+                    max_tier2_message_tokens=4_000,
+                    max_tier2_tool_use_tokens=3_000,
+                    max_tier1_giant_message_tokens=max(8_000, keep_budget // 2),
+                )
+                keep_recent = None
+
         if keep_recent is not None:
             if compression_progress is not None:
                 try:
@@ -980,6 +1015,7 @@ class Agent:
                 original_non_system_count=sum(
                     1 for item in raw_history if item.get("role") != "system"
                 ),
+                token_budget=keep_budget,
             )
             history = compression.history
 
@@ -1043,6 +1079,7 @@ class Agent:
                     summary_model=summary_model,
                     tokens_before=overflow.get("tokens"),
                     tokens_after=provisional_after.get("tokens"),
+                    recent_non_system_count=compression.recent_non_system_count,
                 )
                 try:
                     committed = await checkpoint_manager.commit_context_checkpoint(
@@ -1070,6 +1107,16 @@ class Agent:
                     history = slim_history_tool_results(
                         raw_history[committed_count:]
                     )
+                    if len(history) > 1 and estimate_history_tokens(history) > int(keep_budget * 1.5):
+                        history = slim_history_tool_results(
+                            raw_history[committed_count:],
+                            max_result_tokens=800,
+                            protect_recent=1,
+                            intermediate_recent=2,
+                            max_tier2_message_tokens=4_000,
+                            max_tier2_tool_use_tokens=3_000,
+                            max_tier1_giant_message_tokens=max(8_000, keep_budget // 2),
+                        )
 
             final_budget_history = list(history)
             if active_checkpoint_summary:

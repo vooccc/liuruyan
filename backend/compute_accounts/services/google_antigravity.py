@@ -58,6 +58,14 @@ _QUOTA_429_COOLDOWN_SECONDS: float = 30.0    # 30 秒 429 配额限流避让期�
 # Google Antigravity 原生模型目录清单（严格与官方 Antigravity IDE 对齐）
 # 包含 7 大系列、14 款思考分级模型；Gemini 3.1 Pro 严格仅提供 High 和 Low
 ANTIGRAVITY_MODELS: List[Dict[str, Any]] = [
+    # --- 0. Gemini 4 Hydrogen (High, Medium, Low) - 日常帮助 ---
+    {"id": "gemini-4-hydrogen-high", "name": "Gemini 4 Hydrogen (High)", "context_window": 1048576, "vision": True, "tools": True},
+    {"id": "gemini-4-hydrogen-medium", "name": "Gemini 4 Hydrogen (Medium)", "context_window": 1048576, "vision": True, "tools": True},
+    {"id": "gemini-4-hydrogen-low", "name": "Gemini 4 Hydrogen (Low)", "context_window": 1048576, "vision": True, "tools": True},
+
+    # --- 0.1 Gemini 3.5 Flash-Lite - 快速解答 ---
+    {"id": "gemini-3.5-flash-lite", "name": "Gemini 3.5 Flash-Lite", "context_window": 1048576, "vision": True, "tools": True},
+
     # --- 1. Gemini 3.8 Flash (High, Medium, Low) ---
     {"id": "gemini-3.8-flash-high", "name": "Gemini 3.8 Flash High", "context_window": 1048576, "vision": True, "tools": True},
     {"id": "gemini-3.8-flash-medium", "name": "Gemini 3.8 Flash Medium", "context_window": 1048576, "vision": True, "tools": True},
@@ -493,6 +501,17 @@ class GoogleAntigravityAdapter(BaseAccountAdapter):
                 "recommended": True,
             })
 
+        # 优先前置 Gemini 4 Hydrogen 与 3.5 Flash-Lite 系列模型
+        hydrogen_entries = [
+            {"id": "gemini-4-hydrogen-high", "name": "Gemini 4 Hydrogen (High)", "context_window": 1048576, "vision": True, "tools": True, "recommended": True},
+            {"id": "gemini-4-hydrogen-medium", "name": "Gemini 4 Hydrogen (Medium)", "context_window": 1048576, "vision": True, "tools": True, "recommended": True},
+            {"id": "gemini-4-hydrogen-low", "name": "Gemini 4 Hydrogen (Low)", "context_window": 1048576, "vision": True, "tools": True, "recommended": True},
+            {"id": "gemini-3.5-flash-lite", "name": "Gemini 3.5 Flash-Lite", "context_window": 1048576, "vision": True, "tools": True, "recommended": True},
+        ]
+        existing_ids = {m["id"] for m in parsed_models}
+        prefix_entries = [m for m in hydrogen_entries if m["id"] not in existing_ids]
+        parsed_models = prefix_entries + parsed_models
+
         logger.info(
             "[GoogleAntigravity] 成功从云端动态同步 %d 款 Recommended 模型: %s",
             len(parsed_models),
@@ -898,8 +917,22 @@ class GoogleAntigravityAdapter(BaseAccountAdapter):
         target_model = model
         if target_model.startswith("models/"):
             target_model = target_model[7:]
+
+        # Gemini 4 Hydrogen 系列映射与思考等级判定（对齐官方日常帮助 Hydrogen 高/中/低）
+        is_hydrogen = "hydrogen" in target_model.lower() or target_model.lower() in ("gemini-4", "4-hydrogen", "gemini-4-default")
+        hydrogen_budget = None
+        if is_hydrogen:
+            if "low" in target_model.lower():
+                hydrogen_budget = 4096
+            elif "medium" in target_model.lower():
+                hydrogen_budget = 8192
+            else:  # high 或默认档位，严格对齐官方 client 默认勾选的 'Hydrogen 高'
+                hydrogen_budget = 24576
+            target_model = "gemini-4-hydrogen-sonar"
+        elif target_model in ("gemini-3.5-flash-lite", "3.5-flash-lite", "flash-lite"):
+            target_model = "gemini-3.5-flash-lite"
         # 兼容简写别名映射到对应的默认思考分级
-        if target_model in ("gemini-3.8-flash", "gemini-3.8-flash-default"):
+        elif target_model in ("gemini-3.8-flash", "gemini-3.8-flash-default"):
             target_model = "gemini-3.8-flash-medium"
         elif target_model in ("gemini-3.7-flash", "gemini-3.7-flash-default"):
             target_model = "gemini-3.7-flash-medium"
@@ -1004,7 +1037,9 @@ class GoogleAntigravityAdapter(BaseAccountAdapter):
         # 如果模型带 -high / -medium / -low 等思考分级，注入 thinkingConfig
         # 必须显式携带 includeThoughts=True，否则 Google 端点默认将思考流剥离隐藏
         thinking_budget = None
-        if "high" in target_model.lower():
+        if hydrogen_budget is not None:
+            thinking_budget = hydrogen_budget
+        elif "high" in target_model.lower():
             thinking_budget = 24576
         elif "medium" in target_model.lower():
             thinking_budget = 8192

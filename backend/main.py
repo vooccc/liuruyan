@@ -1268,15 +1268,42 @@ async def chat(request: ChatRequest, http_request: Request = None):
         session.provider = request.provider or None
         session.save_meta()
 
+    # per-agent model routing 阶段 3 Commit 3.2：提前解析不可变模型配置（并发隔离），
+    # 供下方附件 vision 判定与下游 use_call_config 共用同一份权威 tags，不再裸用正则复筛。
+    call_config = None
+    try:
+        override_provider = request.provider if request.model else None
+        call_config = resolve_call_model_config(
+            agent_id=agent_id,
+            override=request.model or None,
+            session=session,
+            override_provider=override_provider,
+        )
+    except ModelResolutionError as exc:
+        logger.warning(
+            "[CHAT-RESOLVE-FAIL] agent=%s req_model=%r req_provider=%r err=%s",
+            agent_id, request.model, request.provider, exc,
+        )
+
     # 附件：拼 footer 到 user message 末尾。根据模型 vision 能力决定提示内容。
     # mutate request.message 是有意为之：下游 8 处 request.message 使用点（route、
     # session.append、agent.chat、_finalize_chat_turn、recall、corridor）都需看到拼后
     # 版本 —— 不 mutate 就得在 8 处 each 里传 effective 变量，反而容易漏一处。
     _attachments = request.attachments or []
     if _attachments:
-        # 检测当前模型是否有 vision 能力
-        from backend.providers.capabilities import infer_capabilities
-        model_caps = infer_capabilities(effective_model)
+        # 优先消费 call_config 里已解析的权威 tags；解析失败时回落 resolve_model_capabilities
+        if call_config is not None and getattr(call_config, "tags", None):
+            model_caps = list(call_config.tags)
+        else:
+            from backend.providers.capabilities import resolve_model_capabilities
+            fallback_provider = (
+                (request.provider if request.model else None)
+                or (getattr(session, "provider", None) if session else None)
+            )
+            model_caps = resolve_model_capabilities(
+                effective_model or "",
+                provider_id=fallback_provider,
+            )
         has_vision = "vision" in model_caps
         
         if has_vision:
@@ -1407,34 +1434,7 @@ async def chat(request: ChatRequest, http_request: Request = None):
         prefilled_user_message_index = session.message_count
 
     agent = get_agent(agent_id)
-
-    # per-agent model routing 阶段 3 Commit 3.2：动态切换模型（如果请求指定了模型）
-    # 老路径 _configure_runtime_model 改 LLMClient 单例字段，并发 chat 会互踩；
-    # 新路径 resolve 纯函数拿 cfg + 下面 agent.chat 外层 with use_call_config 注入
-    # ContextVar，per-task 隔离。resolve 失败时 cfg=None → with 是 no-op，走
-    # LLMClient self 字段 fallback（老行为）。
-    call_config = None
-    try:
-        # 仅当前端显式给了 (model, provider) 二元组时才启动严格匹配 ——
-        # request.model 为空的 fallback 路径上 provider 不应该被硬套。
-        override_provider = request.provider if request.model else None
-        # ⚠️ override 只传 request.model，不传 effective_model——让
-        # resolve_call_model_config 内部按 override > session > agent > global 链路
-        # 自洽走，并选对应层的 provider_hint。之前传 effective_model
-        # 会让 fallback 兑底值被误当 override 路径，错选 hint。
-        call_config = resolve_call_model_config(
-            agent_id=agent_id,
-            override=request.model or None,
-            session=session,
-            override_provider=override_provider,
-        )
-    except ModelResolutionError as exc:
-        # 保留异常分支诊断日志：picker 给了不存在的 (model, provider) 组合时
-        # 这条会立刻告诉我们是个哪组合出错。
-        logger.warning(
-            "[CHAT-RESOLVE-FAIL] agent=%s req_model=%r req_provider=%r err=%s",
-            agent_id, request.model, request.provider, exc,
-        )
+    # call_config 已在上方解析完毕（供附件 vision 判定与此处 use_call_config 共用）
 
     # 从 Session 恢复对话历史（不再覆盖 Agent 的 self.conversation_history）
     session_history = None

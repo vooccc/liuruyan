@@ -105,8 +105,13 @@ async def list_providers():
         from backend.compute_accounts.models_provider import get_pro_providers
         for vp in get_pro_providers():
             for m in vp.get("models", []):
-                if not m.get("tags"):
-                    m["tags"] = ["vision", "tools"]
+                if m.get("tags") is None:
+                    inferred = []
+                    if m.get("vision", True):
+                        inferred.append("vision")
+                    if m.get("tools", True):
+                        inferred.append("function_calling")
+                    m["tags"] = inferred or ["chat"]
                 if not m.get("icon"):
                     m["icon"] = "⚡"
                 m.setdefault("added_by_user", False)
