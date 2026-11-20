@@ -113,7 +113,7 @@ class ToolCallComplete:
     id: str = ""                           # toolCallId（vendor SDK 给的稳定 id）
     name: str = ""                         # function name（累积完整后）
     arguments_raw: str = ""                # 累积的 JSON 字符串（未 parse）
-    thought_signature: Optional[str] = None
+    thought_signature: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

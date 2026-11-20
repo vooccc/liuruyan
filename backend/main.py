@@ -1028,6 +1028,41 @@ async def get_config(agent_id: Optional[str] = None):
 # ----- 聊天附件上传 -----
 _UPLOAD_MAX_SIZE = 50 * 1024 * 1024  # 50 MB。超过这个上传趋于不理智；LLM 读这么大的文件本身也费 token
 _UPLOAD_FILENAME_UNSAFE_RE = re.compile(r"[^\w\u4e00-\u9fff.\-]+")  # 保留中文/字母/数字/./_/-，其余 → _
+_AUDIO_ATTACHMENT_EXTS = frozenset({
+    ".mp3", ".wav", ".m4a", ".ogg", ".flac", ".aac",
+    ".opus", ".wma", ".aiff", ".mpga", ".amr", ".webm",
+})
+_IMAGE_ATTACHMENT_EXTS = frozenset({
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp",
+    ".svg", ".ico", ".tiff", ".tif", ".heic", ".heif",
+})
+
+
+def _is_audio_attachment_path(path: str) -> bool:
+    return Path(str(path or "")).suffix.lower() in _AUDIO_ATTACHMENT_EXTS
+
+
+def _is_image_attachment_path(path: str) -> bool:
+    return Path(str(path or "")).suffix.lower() in _IMAGE_ATTACHMENT_EXTS
+
+
+def _build_chat_attachment_footer(attachments: List[str], *, has_vision: bool) -> str:
+    if not attachments:
+        return ""
+    image_paths = [p for p in attachments if _is_image_attachment_path(p)]
+    non_image_paths = [p for p in attachments if not _is_image_attachment_path(p)]
+    bullet_lines = "\n".join(f"- {p}" for p in attachments)
+
+    if image_paths and not has_vision and not non_image_paths:
+        return (
+            f"\n\n[附件 / 用户上传]\n{bullet_lines}\n"
+            "（当前模型无 vision 能力，无法识别图片内容。如需生成或编辑图片，可使用已装载的技能）"
+        )
+
+    footer = f"\n\n[附件 / 用户上传，请用 read_file 工具读取]\n{bullet_lines}"
+    if image_paths and not has_vision:
+        footer += "\n（当前模型无 vision 能力，无法识别图片内容；音频/文档/文本附件仍可用 read_file 读取）"
+    return footer
 
 
 def _sanitize_upload_filename(name: str) -> str:
@@ -1305,18 +1340,8 @@ async def chat(request: ChatRequest, http_request: Request = None):
                 provider_id=fallback_provider,
             )
         has_vision = "vision" in model_caps
-        
-        if has_vision:
-            # 有 vision：提示用 read_file 读取
-            _footer = "\n\n[附件 / 用户上传，请用 read_file 工具读取]\n" + "\n".join(
-                f"- {p}" for p in _attachments
-            )
-        else:
-            # 无 vision：只显示路径，提示可用技能处理（引导 LLM 去找 skill）
-            _footer = "\n\n[附件 / 用户上传]\n" + "\n".join(
-                f"- {p}" for p in _attachments
-            ) + "\n（当前模型无 vision 能力，无法识别图片内容。如需生成或编辑图片，可使用已装载的技能）"
-        
+        _footer = _build_chat_attachment_footer(_attachments, has_vision=has_vision)
+
         request.message = request.message + _footer
         logger.debug("[CHAT-UPLOAD] attached %s file(s), has_vision=%s, model=%s", len(_attachments), has_vision, effective_model)
 
@@ -2792,6 +2817,15 @@ from backend.voice_stream.routes import router as _voice_stream_router
 app.include_router(_voice_stream_router)
 
 
+# ----- 语音转写（voice_transcription 孤立包）：GET/PUT /voice/transcription/config + POST /transcribe
+# 零污染装配：删除 backend/voice_transcription/ 目录时自动静默跳过（或直接还原此处几行）。
+try:
+    from backend.voice_transcription.routes import router as _voice_transcription_router
+    app.include_router(_voice_transcription_router)
+except ImportError:
+    pass
+
+
 # ----- 搜索引擎设置：GET/PUT /settings/search（Tavily key，柳如烟+内容模块共用）----
 from backend.routes import search_router as _search_router
 app.include_router(_search_router)
@@ -3222,12 +3256,16 @@ def _segments_to_anthropic_blocks(segments: List[Dict]) -> Dict[str, Any]:
                     args = {}
             elif not isinstance(args, dict):
                 args = {}
-            assistant_blocks.append({
+            tool_block: Dict[str, Any] = {
                 "type": "tool_use",
                 "id": seg.get("tool_use_id") or seg.get("id") or "",
                 "name": seg.get("tool_name") or seg.get("name") or "",
                 "input": args,
-            })
+            }
+            thought_sig = seg.get("thought_signature") or seg.get("thoughtSignature")
+            if thought_sig:
+                tool_block["thought_signature"] = thought_sig
+            assistant_blocks.append(tool_block)
         elif stype == "tool_result":
             # 多模态延迟图像分块投递机制
             # （image 已被 llm_client 拆走当 deferred user message）。

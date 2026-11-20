@@ -1061,14 +1061,14 @@ export function useChatSubmitFlow({
     const overrideText = messageOverride ?? submitOverrideTextRef.current
     submitOverrideTextRef.current = null
     let rawText = (overrideText ?? input).trim()
-    if (!rawText) {
+    if (!rawText && attachmentSnapshot.length === 0) {
       releaseLock()
       return
     }
 
     // 🎯 Goal 模式自动代理：如果当前处于 goal 模式且用户输入的不是以 / 开头的命令，
     // 自动作为 /goal 目标派发，省去手动键入 /goal
-    if (_inputMode === 'goal' && !rawText.startsWith('/')) {
+    if (_inputMode === 'goal' && rawText && !rawText.startsWith('/')) {
       rawText = `/goal ${rawText}`
     }
 

@@ -10,6 +10,7 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
+  FileAudio,
   Globe,
   Languages,
   Loader2,
@@ -20,6 +21,7 @@ import {
   Volume2,
 } from 'lucide-react'
 import VoiceStreamSettingsPane from '../../voice/VoiceStreamSettingsPane'
+import VoiceTranscriptionPane from './VoiceTranscriptionPane'
 import {
   getSearchSettings,
   updateSearchSettings,
@@ -56,7 +58,7 @@ import FastContextPane from './FastContextPane'
  *     后端 voice_transcription 包同步删除）；本文件不再引用 api/voice。
  */
 
-type AuxSubTab = 'translate' | 'voice_stream' | 'tts' | 'search' | 'fast_context'
+type AuxSubTab = 'translate' | 'voice_stream' | 'voice_transcription' | 'tts' | 'search' | 'fast_context'
 const AUX_SUBTAB_KEY = 'lr:settings-aux-subtab'
 
 interface SubTabDef {
@@ -78,6 +80,12 @@ const SUB_TABS: SubTabDef[] = [
     label: '流式语音',
     icon: <AudioWaveform size={16} />,
     desc: '边说边出字：云端 DashScope 或本地 SenseVoice（免 key），唯一的语音输入入口',
+  },
+  {
+    id: 'voice_transcription',
+    label: '语音转写',
+    icon: <FileAudio size={16} />,
+    desc: '音频文件转写（本地 SenseVoice / OpenAI 兼容接口），供对话附件 read_file 与 transcribe_audio 工具调用',
   },
   {
     id: 'tts',
@@ -106,6 +114,7 @@ export default function VoiceSettings() {
       if (
         saved === 'translate' ||
         saved === 'voice_stream' ||
+        saved === 'voice_transcription' ||
         saved === 'tts' ||
         saved === 'search' ||
         saved === 'fast_context'
@@ -141,6 +150,7 @@ export default function VoiceSettings() {
       <section className="aux-settings-pane" aria-label="辅助功能内容">
         {subTab === 'translate' && <TranslatePane />}
         {subTab === 'voice_stream' && <VoiceStreamSettingsPane />}
+        {subTab === 'voice_transcription' && <VoiceTranscriptionPane />}
         {subTab === 'tts' && <TTSPane />}
         {subTab === 'search' && <SearchEnginePane />}
         {subTab === 'fast_context' && <FastContextPane />}

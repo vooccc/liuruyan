@@ -40,6 +40,7 @@ from .memory_refiner_v2 import MemoryRefinerV2
 from .skill_growth import get_skill_growth_manager
 from .llm_adapters import (
     history_entry_to_openai_std,
+    normalize_history_to_openai_std,
     to_anthropic_messages,
     to_openai_messages,
     infer_provider_kind,
@@ -1192,14 +1193,12 @@ class Agent:
                     endpoint=getattr(llm, "base_url", "") or "",
                 )
 
-        # 历史消息归一化：history_entry_to_openai_std 处理：
-        # 1. assistant content=list[ContentBlock] → OpenAI std (content + tool_calls)
-        # 2. user content=list[tool_result blocks] → 拆成 N 条 role=tool
-        # 3. 纯文本 user/assistant/system 直通
-        # 一条 v3 entry 可能产出 1+N 条 OpenAI std 消息（assistant + 多个 tool）
-        normalized_history: list[dict] = []
-        for msg in history:
-            normalized_history.extend(history_entry_to_openai_std(msg))
+        # 历史消息归一化：normalize_history_to_openai_std 处理：
+        # 1. 多轮折叠的 assistant + user(tool_result) 按真实轮次还原为交替序列
+        # 2. 单轮 assistant content=list[ContentBlock] → OpenAI std (content + tool_calls)
+        # 3. user content=list[tool_result blocks] → 拆成 N 条 role=tool
+        # 4. 纯文本 / 多模态 user/assistant/system 透传
+        normalized_history = normalize_history_to_openai_std(history)
 
         # vision 跨轮持久化（Stage 1b + 多模态延迟图像投递机制）：transcript 里 image
         # base64 被换成轻量 image_ref（按 sha256 内容寻址），喂给 LLM 前在

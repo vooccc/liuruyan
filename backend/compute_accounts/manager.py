@@ -313,47 +313,54 @@ class ComputeAccountsManager:
         now = time.time()
         start_idx = self._active_index.get(provider_id, 0)
         n = len(accs)
+        # 可用（未禁用）账号数：冷却跳过逻辑必须以此为准，否则唯一可用账号
+        # 被冷却锁住时会误判为"无可用账号"（bug: n 包含了禁用账号）
+        enabled_count = sum(1 for a in accs if a.get("enabled", True))
 
-        for i in range(n):
-            curr_idx = (start_idx + i) % n
-            acc = accs[curr_idx]
-            # 避开未入池（禁用）的账号
-            if acc.get("enabled", True) is False:
-                continue
-            # 避开冷却中（如 429 熔断）的账号（仅当账号池有多个账号时才跳过，避免单账号用户全局不可用）
-            if n > 1 and acc.get("cooling_until", 0) > now:
-                continue
-
-            access_token = acc.get("access_token")
-            expires_at = acc.get("expires_at", 0)
-            refresh_token = acc.get("refresh_token")
-
-            # 提前 60 秒自动刷新
-            if expires_at and (expires_at - now < 60) and refresh_token:
-                try:
-                    logger.info("[ComputeAccounts] Token 即将过期，自动调用 refresh_token: %s", acc.get("email"))
-                    refreshed = await adapter.refresh_access_token(refresh_token)
-                    acc["access_token"] = refreshed.get("access_token", access_token)
-                    acc["expires_at"] = refreshed.get("expires_at", now + 3600)
-                    if refreshed.get("refresh_token"):
-                        acc["refresh_token"] = refreshed.get("refresh_token")
-                    self._save()
-                    access_token = acc["access_token"]
-                except Exception as e:
-                    logger.warning("[ComputeAccounts] 自动刷新 Token 失败: %s", e)
+        # 两轮扫描：第一轮避开冷却中的账号；若全部冷却，第二轮放宽限制兜底
+        # （拿冷却中的账号试一次，总比直接报"无可用账号"强）
+        for allow_cooling in (False, True):
+            for i in range(n):
+                curr_idx = (start_idx + i) % n
+                acc = accs[curr_idx]
+                # 避开未入池（禁用）的账号
+                if acc.get("enabled", True) is False:
+                    continue
+                # 避开冷却中（如 429 熔断）的账号（仅当池内还有其他可用账号时才跳过）
+                if not allow_cooling and enabled_count > 1 and acc.get("cooling_until", 0) > now:
                     continue
 
-            if access_token:
-                self._active_index[provider_id] = curr_idx
-                return access_token
+                access_token = acc.get("access_token")
+                expires_at = acc.get("expires_at", 0)
+                refresh_token = acc.get("refresh_token")
+
+                # 提前 60 秒自动刷新
+                if expires_at and (expires_at - now < 60) and refresh_token:
+                    try:
+                        logger.info("[ComputeAccounts] Token 即将过期，自动调用 refresh_token: %s", acc.get("email"))
+                        refreshed = await adapter.refresh_access_token(refresh_token)
+                        acc["access_token"] = refreshed.get("access_token", access_token)
+                        acc["expires_at"] = refreshed.get("expires_at", now + 3600)
+                        if refreshed.get("refresh_token"):
+                            acc["refresh_token"] = refreshed.get("refresh_token")
+                        self._save()
+                        access_token = acc["access_token"]
+                    except Exception as e:
+                        logger.warning("[ComputeAccounts] 自动刷新 Token 失败: %s", e)
+                        continue
+
+                if access_token:
+                    self._active_index[provider_id] = curr_idx
+                    return access_token
 
         return None
 
     def mark_cooling(self, provider_id: str, cooldown_seconds: int = 300) -> None:
         """遭遇 429 限流时，将当前账号标记冷却，并自动顺延至下一账号"""
         accs = self._accounts.get(provider_id, [])
-        if len(accs) <= 1:
-            # 单账号不进行全局冷却锁定，以便用户切换其他可用模型
+        # 以"可用（未禁用）账号数"为准：只有 1 个可用账号时不做冷却锁定，
+        # 否则唯一账号被 429 锁 5 分钟 = 全局不可用（旧逻辑用总数，含禁用账号，会误判）
+        if sum(1 for a in accs if a.get("enabled", True)) <= 1:
             return
         curr_idx = self._active_index.get(provider_id, 0)
         if 0 <= curr_idx < len(accs):

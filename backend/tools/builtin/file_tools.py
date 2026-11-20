@@ -5,6 +5,8 @@
 删除了 Hermes 环境管理系统，只保留核心文件操作功能
 """
 
+import asyncio
+import concurrent.futures
 import contextvars
 import errno
 import json
@@ -1626,6 +1628,237 @@ _FILE_TYPE_HANDLERS: Dict[str, Callable[..., str]] = {
     ".ipynb": _read_ipynb,
 }
 
+# read_file 原生支持的音视频格式（统一入口，绕过上游裁剪自定义工具并兼容所有模型）
+_AUDIO_EXTENSIONS = frozenset({
+    ".mp3", ".wav", ".m4a", ".ogg", ".flac", ".aac",
+    ".opus", ".wma", ".aiff", ".mpga", ".amr", ".webm", ".mp4", ".mpeg",
+})
+
+
+def is_audio_file(path: str) -> bool:
+    """按扩展名判断是否为可转写音视频文件。"""
+    return Path(str(path or "")).suffix.lower() in _AUDIO_EXTENSIONS
+
+
+def _run_coro_sync(coro):
+    """在同步调用方中安全执行异步协程（兼容已有/无 running event loop 两种场景）。"""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
+
+
+async def _read_audio_async(
+    orig_path: str,
+    resolved: Path,
+    offset: int = 1,
+    limit: int = 2000,
+) -> str:
+    """读取音频/视频文件并调用 voice_transcription 转写为文字（复用 offset/limit 切片）。"""
+    if not resolved.exists():
+        return json.dumps({"error": f"File not found: {orig_path}", **_suggest_path(resolved)}, ensure_ascii=False)
+    if not resolved.is_file():
+        return json.dumps({"error": f"Not a file: {orig_path}", **_suggest_dir(resolved)}, ensure_ascii=False)
+
+    try:
+        from backend.voice_transcription.config import load_transcription_config
+        from backend.voice_transcription.engine import TranscriptionError, transcribe_file
+    except ImportError:
+        return json.dumps({
+            "error": (
+                f"Cannot read '{orig_path}': audio transcription module "
+                "(backend.voice_transcription) is not installed."
+            )
+        }, ensure_ascii=False)
+
+    cfg = load_transcription_config()
+    if not cfg.enabled:
+        return json.dumps({
+            "error": (
+                "Voice transcription is currently disabled in Settings "
+                "(设置 → 辅助功能 → 语音转写). Please ask the user to enable it first."
+            ),
+            "path": str(resolved),
+        }, ensure_ascii=False)
+
+    try:
+        res = await transcribe_file(resolved, cfg_override=cfg)
+    except TranscriptionError as e:
+        return json.dumps({"error": e.message, "path": str(resolved)}, ensure_ascii=False)
+    except Exception as e:
+        logger.exception("Error transcribing audio file %s", resolved)
+        return json.dumps({"error": f"Audio transcription failed: {e}", "path": str(resolved)}, ensure_ascii=False)
+
+    meta_parts = [f"file={resolved.name}", f"backend={res.backend}", f"model={res.model}"]
+    if res.duration_sec is not None:
+        meta_parts.append(f"duration={res.duration_sec:.2f}s")
+    if res.language:
+        meta_parts.append(f"language={res.language}")
+    header = f"[Audio transcription: {' | '.join(meta_parts)}]"
+    body = (res.text or "").strip() or "(audio contains no recognizable speech)"
+    full_text = f"{header}\n{body}\n"
+
+    extra_meta: Dict[str, Any] = {
+        "backend": res.backend,
+        "model": res.model,
+        "chunks_count": res.chunks_count,
+    }
+    if res.duration_sec is not None:
+        extra_meta["duration_sec"] = round(res.duration_sec, 2)
+    if res.language:
+        extra_meta["language"] = res.language
+
+    return _slice_office_text_result(
+        resolved,
+        full_text,
+        offset=offset,
+        limit=limit,
+        extracted_by="voice_transcription",
+        extra_meta=extra_meta,
+    )
+
+
+def _read_non_audio_file(
+    path: str,
+    resolved: Path,
+    offset: int = 1,
+    limit: int = 2000,
+    pages: Optional[List[int]] = None,
+    pdf_extractor: str = "pypdf",
+) -> str:
+    """读取非音频文件（image / pdf / docx / pptx / xlsx / ipynb / text）。"""
+    # 图片：base64 inline 给 vision 模型看（handover_image_read_2026-05-11.md §3.1）
+    # 注意必须先于二进制检查（PNG/JPG 也在 BINARY_EXTENSIONS 里）
+    # 单独处理：返回的是 vision block 数组而非 cat -n 文本，跟 registry 形态不一致
+    if is_image(str(resolved)):
+        return _read_image_as_blocks(path, resolved)
+
+    # 专用格式 dispatch（2026-05-12 R1）：从 if 链改成 registry 查表
+    # - PDF 走双路径 (Anthropic native / pypdf / pdfplumber)，需透传 pages + extractor
+    # - office 三者 (docx/pptx/xlsx) 同签名 (offset, limit)
+    # 新增文件类型：在 _FILE_TYPE_HANDLERS 加一行即可。
+    handler = _FILE_TYPE_HANDLERS.get(resolved.suffix.lower())
+    if handler is _read_pdf:
+        return handler(
+            path, resolved, offset=offset, limit=limit,
+            pages=pages, extractor=pdf_extractor,
+        )
+    if handler is not None:
+        return handler(path, resolved, offset=offset, limit=limit)
+
+    # 二进制文件检查
+    if has_binary_extension(str(resolved)):
+        ext = resolved.suffix.lower()
+        return json.dumps({
+            "error": f"Cannot read '{path}': binary file type {ext}"
+        })
+
+    # 敏感路径检查
+    sensitive_warning = _check_sensitive_path(str(resolved))
+    if sensitive_warning:
+        logger.warning(sensitive_warning)
+
+    # 读取文件
+    if not resolved.exists():
+        # P1#2 自愈提示：模糊匹配父目录里的同名近似文件，把候选写进 hint
+        # 这样 LLM 看到 "File not found" + "did you mean: foo.py / bar.py" 能直接续上正确路径
+        return json.dumps({"error": f"File not found: {path}", **_suggest_path(resolved)})
+
+    if not resolved.is_file():
+        # P1#2 自愈提示：路径是目录时列出前几个子项，引导 LLM 改用 read_file/glob_search
+        return json.dumps({"error": f"Not a file: {path}", **_suggest_dir(resolved)})
+
+    with open(resolved, 'r', encoding='utf-8', errors='replace') as f:
+        lines = f.readlines()
+
+    total_lines = len(lines)
+    start_idx = max(0, offset - 1)
+    end_idx = min(total_lines, start_idx + limit)
+
+    selected_lines = lines[start_idx:end_idx]
+
+    formatted_lines = []
+    truncated_lines = []
+    for i, line in enumerate(selected_lines, start=offset):
+        text = line.rstrip()
+        if len(text) > _READ_FILE_MAX_LINE_CHARS:
+            original_len = len(text)
+            text = (
+                text[:_READ_FILE_MAX_LINE_CHARS]
+                + f"...[line truncated: original {original_len} chars, kept {_READ_FILE_MAX_LINE_CHARS}]"
+            )
+            truncated_lines.append({"line": i, "original_chars": original_len})
+        formatted_lines.append(f"{i}\t{text}")
+
+    content = "\n".join(formatted_lines)
+    content_truncated = False
+    original_content_chars = len(content)
+    if original_content_chars > _DEFAULT_MAX_READ_CHARS:
+        note = (
+            f"\n\n[read_file content truncated: original {original_content_chars} chars, "
+            f"kept {_DEFAULT_MAX_READ_CHARS} chars. Use narrower offset/limit or grep for specifics.]"
+        )
+        keep = max(0, _DEFAULT_MAX_READ_CHARS - len(note))
+        content = content[:keep] + note
+        content_truncated = True
+
+    truncated = end_idx < total_lines
+
+    result = {
+        "path": str(resolved),
+        "content": content,
+        "total_lines": total_lines,
+        "showing_lines": f"{offset}-{offset + len(selected_lines) - 1}",
+    }
+
+    if truncated or truncated_lines or content_truncated:
+        result["truncated"] = True
+        hints = []
+        if truncated:
+            hints.append(f"File has {total_lines} lines. Use offset and limit to read more.")
+        if truncated_lines:
+            result["truncated_lines"] = truncated_lines[:20]
+            result["truncated_line_count"] = len(truncated_lines)
+            hints.append(
+                f"{len(truncated_lines)} shown line(s) exceeded {_READ_FILE_MAX_LINE_CHARS} chars and were shortened."
+            )
+        if content_truncated:
+            result["original_content_chars"] = original_content_chars
+            result["content_budget_chars"] = _DEFAULT_MAX_READ_CHARS
+            hints.append("Returned content hit the read_file character budget; use a narrower range.")
+        result["hint"] = " ".join(hints)
+
+    return json.dumps(result, ensure_ascii=False)
+
+
+async def read_file_async(
+    path: str,
+    offset: int = 1,
+    limit: int = 2000,
+    pages: Optional[List[int]] = None,
+    pdf_extractor: str = "pypdf",
+) -> str:
+    """异步读取文件内容（供 registry async handler 调用；音频走原生 async 转写）。"""
+    if not isinstance(offset, int) or offset < 1:
+        offset = 1
+    if not isinstance(limit, int) or limit < 1:
+        limit = 2000
+
+    try:
+        if _is_blocked_device(path):
+            return json.dumps({"error": f"Cannot read '{path}': this is a device file"})
+        resolved = _resolve_read_path(path)
+        if resolved.suffix.lower() in _AUDIO_EXTENSIONS:
+            return await _read_audio_async(path, resolved, offset=offset, limit=limit)
+        return _read_non_audio_file(
+            path, resolved, offset=offset, limit=limit, pages=pages, pdf_extractor=pdf_extractor
+        )
+    except Exception as e:
+        logger.exception(f"Error reading file {path}")
+        return json.dumps({"error": str(e)})
+
 
 def read_file_tool(
     path: str,
@@ -1634,129 +1867,23 @@ def read_file_tool(
     pages: Optional[List[int]] = None,
     pdf_extractor: str = "pypdf",
 ) -> str:
-    """读取文件内容 — 路由到各专用 handler（image / pdf / docx / pptx / xlsx）或普通文本。"""
-    # 类型 coerce 由 clean_registry._dispatch 统一处理（按 input_schema 把 LLM
-    # 传的 "1" 字符串转 int）。这里只做业务约束 clamp：offset / limit 必须 ≥ 1，
-    # 否则切片越界。clean_registry 失败时会保留原值，所以仍需 isinstance 防御。
+    """读取文件内容 — 路由到各专用 handler（image / audio / pdf / docx / pptx / xlsx）或普通文本。"""
     if not isinstance(offset, int) or offset < 1:
         offset = 1
     if not isinstance(limit, int) or limit < 1:
         limit = 2000
 
     try:
-        # 设备文件检查
         if _is_blocked_device(path):
             return json.dumps({
                 "error": f"Cannot read '{path}': this is a device file"
             })
-
-        # read 路径专用解析：agent_dir 找不到时 fallback 到 cwd（项目根），
-        # 兼容 subagent / LLM 用相对路径读项目源码（read_file('backend/main.py')）
         resolved = _resolve_read_path(path)
-
-        # 图片：base64 inline 给 vision 模型看（handover_image_read_2026-05-11.md §3.1）
-        # 注意必须先于二进制检查（PNG/JPG 也在 BINARY_EXTENSIONS 里）
-        # 单独处理：返回的是 vision block 数组而非 cat -n 文本，跟 registry 形态不一致
-        if is_image(str(resolved)):
-            return _read_image_as_blocks(path, resolved)
-
-        # 专用格式 dispatch（2026-05-12 R1）：从 if 链改成 registry 查表
-        # - PDF 走双路径 (Anthropic native / pypdf / pdfplumber)，需透传 pages + extractor
-        # - office 三者 (docx/pptx/xlsx) 同签名 (offset, limit)
-        # 新增文件类型：在 _FILE_TYPE_HANDLERS 加一行即可。
-        handler = _FILE_TYPE_HANDLERS.get(resolved.suffix.lower())
-        if handler is _read_pdf:
-            return handler(
-                path, resolved, offset=offset, limit=limit,
-                pages=pages, extractor=pdf_extractor,
-            )
-        if handler is not None:
-            return handler(path, resolved, offset=offset, limit=limit)
-
-        # 二进制文件检查
-        if has_binary_extension(str(resolved)):
-            ext = resolved.suffix.lower()
-            return json.dumps({
-                "error": f"Cannot read '{path}': binary file type {ext}"
-            })
-
-        # 敏感路径检查
-        sensitive_warning = _check_sensitive_path(str(resolved))
-        if sensitive_warning:
-            logger.warning(sensitive_warning)
-
-        # 读取文件
-        if not resolved.exists():
-            # P1#2 自愈提示：模糊匹配父目录里的同名近似文件，把候选写进 hint
-            # 这样 LLM 看到 "File not found" + "did you mean: foo.py / bar.py" 能直接续上正确路径
-            return json.dumps({"error": f"File not found: {path}", **_suggest_path(resolved)})
-
-        if not resolved.is_file():
-            # P1#2 自愈提示：路径是目录时列出前几个子项，引导 LLM 改用 read_file/glob_search
-            return json.dumps({"error": f"Not a file: {path}", **_suggest_dir(resolved)})
-
-        with open(resolved, 'r', encoding='utf-8', errors='replace') as f:
-            lines = f.readlines()
-
-        total_lines = len(lines)
-        start_idx = max(0, offset - 1)
-        end_idx = min(total_lines, start_idx + limit)
-
-        selected_lines = lines[start_idx:end_idx]
-
-        formatted_lines = []
-        truncated_lines = []
-        for i, line in enumerate(selected_lines, start=offset):
-            text = line.rstrip()
-            if len(text) > _READ_FILE_MAX_LINE_CHARS:
-                original_len = len(text)
-                text = (
-                    text[:_READ_FILE_MAX_LINE_CHARS]
-                    + f"...[line truncated: original {original_len} chars, kept {_READ_FILE_MAX_LINE_CHARS}]"
-                )
-                truncated_lines.append({"line": i, "original_chars": original_len})
-            formatted_lines.append(f"{i}\t{text}")
-
-        content = "\n".join(formatted_lines)
-        content_truncated = False
-        original_content_chars = len(content)
-        if original_content_chars > _DEFAULT_MAX_READ_CHARS:
-            note = (
-                f"\n\n[read_file content truncated: original {original_content_chars} chars, "
-                f"kept {_DEFAULT_MAX_READ_CHARS} chars. Use narrower offset/limit or grep for specifics.]"
-            )
-            keep = max(0, _DEFAULT_MAX_READ_CHARS - len(note))
-            content = content[:keep] + note
-            content_truncated = True
-
-        truncated = end_idx < total_lines
-
-        result = {
-            "path": str(resolved),
-            "content": content,
-            "total_lines": total_lines,
-            "showing_lines": f"{offset}-{offset + len(selected_lines) - 1}",
-        }
-
-        if truncated or truncated_lines or content_truncated:
-            result["truncated"] = True
-            hints = []
-            if truncated:
-                hints.append(f"File has {total_lines} lines. Use offset and limit to read more.")
-            if truncated_lines:
-                result["truncated_lines"] = truncated_lines[:20]
-                result["truncated_line_count"] = len(truncated_lines)
-                hints.append(
-                    f"{len(truncated_lines)} shown line(s) exceeded {_READ_FILE_MAX_LINE_CHARS} chars and were shortened."
-                )
-            if content_truncated:
-                result["original_content_chars"] = original_content_chars
-                result["content_budget_chars"] = _DEFAULT_MAX_READ_CHARS
-                hints.append("Returned content hit the read_file character budget; use a narrower range.")
-            result["hint"] = " ".join(hints)
-
-        return json.dumps(result, ensure_ascii=False)
-
+        if resolved.suffix.lower() in _AUDIO_EXTENSIONS:
+            return _run_coro_sync(_read_audio_async(path, resolved, offset=offset, limit=limit))
+        return _read_non_audio_file(
+            path, resolved, offset=offset, limit=limit, pages=pages, pdf_extractor=pdf_extractor
+        )
     except Exception as e:
         logger.exception(f"Error reading file {path}")
         return json.dumps({"error": str(e)})
@@ -2481,6 +2608,10 @@ def _drop_context(kwargs):
 
 def _handle_read_file(**kwargs):
     return read_file_tool(**_drop_context(kwargs))
+
+
+async def _handle_read_file_async(**kwargs):
+    return await read_file_async(**_drop_context(kwargs))
 
 
 def _handle_write_file(**kwargs):

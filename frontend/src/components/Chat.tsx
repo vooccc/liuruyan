@@ -11,7 +11,7 @@ import { useCopyFeedback } from './useCopyFeedback'
 import ChatCommandsPanel from './ChatCommandsPanel'
 import ChatInputTopToolbar from './ChatInputTopToolbar'
 import ChatInputBottomToolbar from './ChatInputBottomToolbar'
-import ChatInputComposer from './ChatInputComposer'
+import ChatInputComposer, { hasDraggedFiles } from './ChatInputComposer'
 import ChatAttachmentChips from './ChatAttachmentChips'
 import type { VoiceStreamButtonRef } from '../voice'
 import { useToast } from './ToastSystem'
@@ -490,7 +490,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     // 放宽：不再拦截图片上传，由后端和 LLM 决定如何处理
     return null
   }, [])
-  const { attachments, attachmentsRef, handleChooseFiles, removeAttachment, clearAttachments } = useChatAttachments({
+  const { attachments, attachmentsRef, hasUploadingRef, handleChooseFiles, removeAttachment, clearAttachments } = useChatAttachments({
     validateFile: validateAttachment,
   })
 
@@ -685,6 +685,10 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   // wrap handleSubmit：依然同步起 fetch（内部读 attachmentsRef.current 时是最新值），
   // 随后立刻清空 UI 上的 chip 列表。不 await：sendMessage 是 streaming，await 会等整个流结束。
   const handleSubmit = useCallback((event?: FormEvent, messageOverride?: string) => {
+    if (!messageOverride && hasUploadingRef.current) {
+      handleSubmitNotice('附件正在上传中', '请等待上传完成后再发送')
+      return
+    }
     // 底部输入框发送时，若有上方残留的原地编辑状态，自动收起退出
     if (editingMessageRef.current) {
       clearEditMark()
@@ -698,7 +702,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     const result = handleSubmitBase(event, wasRecording ? text : messageOverride)
     clearAttachments()
     return result
-  }, [handleSubmitBase, clearAttachments, clearEditMark])
+  }, [handleSubmitBase, clearAttachments, clearEditMark, handleSubmitNotice])
 
   // canSubmit 策略：
   // - 有文字 OR 有至少一个已上传成功的附件 → 允许发送
@@ -921,7 +925,19 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   }, [currentSession?.id, isLoading, messages, confirmAction, refreshSessionState, addToast, clearEditMark])
 
   return (
-    <div className="chat-container">
+    <div
+      className="chat-container"
+      onDragOver={(e) => {
+        if (hasDraggedFiles(e.dataTransfer)) {
+          e.preventDefault()
+        }
+      }}
+      onDrop={(e) => {
+        if (hasDraggedFiles(e.dataTransfer)) {
+          e.preventDefault()
+        }
+      }}
+    >
       <BackendModifiedToastContainer />
       {!backendOnline && (
         <div className="offline-banner">
@@ -1025,6 +1041,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
           <ChatAttachmentChips attachments={attachments} onRemove={removeAttachment} />
         )}
         onPasteFiles={handleChooseFiles}
+        onDropFiles={handleChooseFiles}
         inputRef={inputRef}
         input={input}
         onInputChange={handleInputChange}

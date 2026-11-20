@@ -45,10 +45,10 @@ GOOGLE_SCOPES = [
     "https://www.googleapis.com/auth/experimentsandconfigs",
 ]
 
-# Gemini 3 强制要求历史所有 functionCall 必须包含有效 thoughtSignature，未被各轮持久化时提供保底签名以防 400 崩溃
-DEFAULT_FALLBACK_THOUGHT_SIGNATURE = (
-    "EuYCCuMCAWkUfRN4/ZRUm1i/YCIA0Bv7rUX9FLJhc/H6bgc/7LiQd5hLeAdftq1jL48FO1oYZ8h92XyuBNuUYdFgGSpQS0VOFayHAuODps4hrD8+WfXSC91auqtVGNAVKmy2S0wNmc74gJOcm4lS9jGU+T47diB4/WxjpPvFqbof2v9dv4LiKSsQWJUTA5b39TsuqkGYd0xkynkvUWA+TrDRcnIQva4otfYNSRzOHzpMQzdmrT3w4H3L/RPoWqTNgMTVs7Ei+ks9aT+kQaKkcZejM1GyCkCZr2omXBj1OFpOV3nTnWeskKM/Pd4ukJtRhnVGS0z+7NFOuByVtuzgqZDd8CCghnc2IlHIdNhljYyavWTeM/lyx8dBQfz3C0q38QxI9F4ybtBAQrN8sZIoqn3XwTjgBNlZENEc4mEtBnPbPitckJuP4HXgSiYTZmKJ9Mn7x7uT6x+28fdzTI6+ZPIlGjBWBr5zvA=="
-)
+# Google 官方跳过 thoughtSignature 校验的哨兵值（用于老历史缺失签名或跨模型切换回放）。
+# 严禁使用真实会话抓取的签名常量——Google 服务端会解密该签名并将原会话的思考内容注入当前上下文。
+SKIP_THOUGHT_SIGNATURE_VALIDATOR = "skip_thought_signature_validator"
+DEFAULT_FALLBACK_THOUGHT_SIGNATURE = SKIP_THOUGHT_SIGNATURE_VALIDATOR
 
 # 端点熔断与冷却机制：记录异常端点的冷却截止时间戳，避免永久锁定某节点，支持自动重新探活
 _ENDPOINT_COOLDOWNS: Dict[str, float] = {}  # endpoint -> cooldown_expire_timestamp
@@ -747,18 +747,16 @@ class GoogleAntigravityAdapter(BaseAccountAdapter):
                                     fn_args = json.loads(fn_args)
                                 except Exception:
                                     fn_args = {"raw": fn_args}
-                            sig = (
-                                block.get("thought_signature")
-                                or block.get("thoughtSignature")
-                                or DEFAULT_FALLBACK_THOUGHT_SIGNATURE
-                            )
+                            # 仅读取本 block 自身携带的签名；缺失时暂不填充，统一交由文末“签名收敛”按 turn 兜底
+                            sig = block.get("thought_signature") or block.get("thoughtSignature")
                             part_dict: Dict[str, Any] = {
-                                "thoughtSignature": sig,
                                 "functionCall": {
                                     "name": fn_name,
                                     "args": fn_args or {},
                                 },
                             }
+                            if sig:
+                                part_dict["thoughtSignature"] = sig
                             if "claude" in target_model.lower() and block.get("id"):
                                 part_dict["functionCall"]["id"] = block["id"]
                             parts.append(part_dict)
@@ -766,14 +764,6 @@ class GoogleAntigravityAdapter(BaseAccountAdapter):
                             parts.extend(_image_parts_from_block(block))
                 elif content:
                     parts.append({"text": str(content)})
-
-                # 寻找本轮中携带的任一有效 thought_signature 作为保底基线
-                turn_thought_sig = None
-                for tc in tool_calls:
-                    sig = tc.get("thought_signature") or tc.get("thoughtSignature")
-                    if sig:
-                        turn_thought_sig = sig
-                        break
 
                 for tc in tool_calls:
                     fn = tc.get("function") or {}
@@ -786,19 +776,16 @@ class GoogleAntigravityAdapter(BaseAccountAdapter):
                             fn_args = {"raw": raw_args}
                     else:
                         fn_args = raw_args or {}
-                    sig = (
-                        tc.get("thought_signature")
-                        or tc.get("thoughtSignature")
-                        or turn_thought_sig
-                        or DEFAULT_FALLBACK_THOUGHT_SIGNATURE
-                    )
+                    # 仅读取本 tool_call 自身携带的签名；缺失交由文末“签名收敛”按 turn 兜底
+                    sig = tc.get("thought_signature") or tc.get("thoughtSignature")
                     part_dict = {
-                        "thoughtSignature": sig,
                         "functionCall": {
                             "name": fn_name,
                             "args": fn_args or {},
                         },
                     }
+                    if sig:
+                        part_dict["thoughtSignature"] = sig
                     if "claude" in target_model.lower() and tc.get("id"):
                         part_dict["functionCall"]["id"] = tc["id"]
                     parts.append(part_dict)
@@ -892,6 +879,26 @@ class GoogleAntigravityAdapter(BaseAccountAdapter):
             contents.append({"role": "user", "parts": [{"text": " "}]})
         elif contents[0]["role"] != "user":
             contents.insert(0, {"role": "user", "parts": [{"text": " "}]})
+
+        # ----- 签名收敛（方案B，探针实测 4/4 恢复正常调工具） -----
+        # 每个含 functionCall 的 model 轮次：仅首个 functionCall 保留 thoughtSignature
+        # （真实签名或官方哨兵），其余 functionCall 一律移除签名字段。
+        # 1) Google 仅强制校验首个签名，后续缺失不会 400（探针 split 变体实证）；
+        # 2) 全部携带真实签名会被服务端逐条解密，把原会话思考注入当前上下文（幽灵思考），
+        #    模型"继承完成记忆"后拒绝调用工具并幻觉汇报任务完成（2026-11-20 探针实证 0/4）。
+        for c in contents:
+            if c.get("role") != "model":
+                continue
+            first_fc_seen = False
+            for p in c["parts"]:
+                if not (isinstance(p, dict) and "functionCall" in p):
+                    continue
+                if not first_fc_seen:
+                    first_fc_seen = True
+                    if not p.get("thoughtSignature"):
+                        p["thoughtSignature"] = DEFAULT_FALLBACK_THOUGHT_SIGNATURE
+                else:
+                    p.pop("thoughtSignature", None)
 
         return system_instruction_text, contents
 
@@ -1085,7 +1092,6 @@ class GoogleAntigravityAdapter(BaseAccountAdapter):
         last_error_msg = ""
         had_429 = False
         last_429_msg = ""
-        stream_last_thought_sig = None
 
         proxy = _detect_antigravity_proxy()
         if proxy:
@@ -1097,6 +1103,9 @@ class GoogleAntigravityAdapter(BaseAccountAdapter):
                 url = f"{ep}/v1internal:streamGenerateContent?alt=sse"
                 max_attempts = 2
                 for attempt in range(max_attempts):
+                    # 仅暂存紧邻 functionCall 之前、挂在非 functionCall part（如 thought/text）上的未消费签名；
+                    # 一旦被首个 functionCall 消费即刻清零，绝不向同批或跨 chunk 后续工具复制扩散。
+                    pending_thought_sig: Optional[str] = None
                     try:
                         async with client.stream("POST", url, headers=cloudcode_headers, json=cloudcode_payload) as response:
                             if response.status_code == 200:
@@ -1117,11 +1126,11 @@ class GoogleAntigravityAdapter(BaseAccountAdapter):
                                             if candidates:
                                                 cand = candidates[0]
                                                 parts = cand.get("content", {}).get("parts", [])
-                                                cand_sig = next((p.get("thoughtSignature") for p in parts if p.get("thoughtSignature")), None)
-                                                if cand_sig:
-                                                    stream_last_thought_sig = cand_sig
 
                                                 for part in parts:
+                                                    if not isinstance(part, dict):
+                                                        continue
+                                                    fc = part.get("functionCall")
                                                     text = part.get("text", "")
                                                     if text:
                                                         streamed = True
@@ -1129,22 +1138,26 @@ class GoogleAntigravityAdapter(BaseAccountAdapter):
                                                             yield {"type": "thinking", "content": text}
                                                         else:
                                                             yield {"type": "delta", "content": text}
-                                                    fc = part.get("functionCall")
-                                                    if fc:
-                                                        streamed = True
-                                                        fn_name = fc.get("name", "")
-                                                        fn_args = fc.get("args", {})
-                                                        fn_id = fc.get("id") or f"call_{uuid.uuid4().hex[:8]}"
-                                                        thought_sig = part.get("thoughtSignature") or cand_sig or stream_last_thought_sig
-                                                        if part.get("thoughtSignature"):
-                                                            stream_last_thought_sig = part.get("thoughtSignature")
-                                                        yield {
-                                                            "type": "tool_call",
-                                                            "id": fn_id,
-                                                            "name": fn_name,
-                                                            "arguments": fn_args if isinstance(fn_args, str) else json.dumps(fn_args, ensure_ascii=False),
-                                                            "thought_signature": thought_sig,
-                                                        }
+                                                    if not fc:
+                                                        part_sig = part.get("thoughtSignature")
+                                                        if part_sig:
+                                                            pending_thought_sig = part_sig
+                                                        continue
+                                                    streamed = True
+                                                    fn_name = fc.get("name", "")
+                                                    fn_args = fc.get("args", {})
+                                                    fn_id = fc.get("id") or f"call_{uuid.uuid4().hex[:8]}"
+                                                    thought_sig = part.get("thoughtSignature") or pending_thought_sig
+                                                    pending_thought_sig = None
+                                                    tc_chunk: Dict[str, Any] = {
+                                                        "type": "tool_call",
+                                                        "id": fn_id,
+                                                        "name": fn_name,
+                                                        "arguments": fn_args if isinstance(fn_args, str) else json.dumps(fn_args, ensure_ascii=False),
+                                                    }
+                                                    if thought_sig:
+                                                        tc_chunk["thought_signature"] = thought_sig
+                                                    yield tc_chunk
                                             usage_meta = resp_obj.get("usageMetadata")
                                             if usage_meta:
                                                 # Gemini 的 promptTokenCount 含 cached 部分，

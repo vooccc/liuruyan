@@ -41,7 +41,7 @@ def register(registry):
         _handle_list_project_rules,
     )
     from ..file_tools import (
-        _handle_read_file,
+        _handle_read_file_async,
         _handle_write_file,
         _handle_patch,
         _handle_grep,
@@ -66,6 +66,7 @@ def register(registry):
             "image-only PDFs) page images inlined as base64 blocks for any vision model; see `pages` / `pdf_extractor` params\n"
             "  - Office (.docx / .pptx / .xlsx) -> paragraphs / slides / sheets with tables auto-converted to markdown\n"
             "  - Jupyter notebook (.ipynb) -> cells rendered as markdown / fenced code blocks; outputs truncated\n"
+            "  - Audio / media (.mp3 / .wav / .m4a / .ogg / .flac / .aac / .wma / .opus / .webm / .mp4) -> speech-to-text transcription\n"
             "- Screenshots: ALWAYS use this tool — multimodal models see images directly.\n"
             "- Binary (.zip / .exe / .doc / .ppt / .xls / ...) and directories return errors "
             "(use `glob_search` to list directories).\n"
@@ -100,7 +101,8 @@ def register(registry):
             },
             "required": ["path"],
         },
-        handler=_handle_read_file,
+        handler=_handle_read_file_async,
+        is_async=True,
         arg_aliases=_PATH_ALIAS_MAP,
     )
 
@@ -1252,3 +1254,10 @@ def register(registry):
         handler=_handle_grep,
         arg_aliases={**_PATH_ALIAS_MAP, **_PATTERN_ALIAS_MAP},
     )
+
+    # 语音转写工具（voice_transcription 孤立包）：删除 backend/voice_transcription/ 时自动静默跳过
+    try:
+        from backend.voice_transcription.tool import register as _register_voice_transcription
+        _register_voice_transcription(registry)
+    except ImportError:
+        pass

@@ -7240,6 +7240,11 @@ input[type="password"]::-ms-clear {
 }
 
 .input-bar-modern:focus-within { border-color: var(--primary-color); }
+.input-bar-modern.is-drag-over {
+  border-color: var(--primary-color);
+  border-style: dashed;
+  background: color-mix(in srgb, var(--primary-color) 4%, var(--bg-card));
+}
 
 .input-top-toolbar {
   position: relative;

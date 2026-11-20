@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Brain, MessageSquareText, Loader2, X, FileText } from 'lucide-react'
+import { Brain, MessageSquareText, Loader2, X, FileAudio, FileText } from 'lucide-react'
 import type { ContentSegment, EditMessagePayload, Message as MessageType } from '../api/chat'
 import { SendGlyph } from './conversationUi'
 import ImageLightbox from './ImageLightbox'
@@ -266,7 +266,7 @@ export default function InplaceMessageEditor({
                       </div>
                     ) : (
                       <div className="inplace-attachment-file" title={att.path}>
-                        <FileText size={14} />
+                        {att.isAudio ? <FileAudio size={14} /> : <FileText size={14} />}
                         <span className="inplace-attachment-name">{att.name}</span>
                       </div>
                     )}

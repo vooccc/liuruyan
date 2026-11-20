@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { FileText } from 'lucide-react'
+import { FileAudio, FileText } from 'lucide-react'
 import ImageLightbox from './ImageLightbox'
 import { getUploadedFileUrl, type UserMessageAttachment } from './userAttachmentFooter'
 
@@ -41,7 +41,7 @@ export default function UserMessageAttachments({ attachments }: UserMessageAttac
             className="user-msg-attachment-file"
             title={att.path}
           >
-            <FileText size={14} />
+            {att.isAudio ? <FileAudio size={14} /> : <FileText size={14} />}
             <span className="user-msg-attachment-file-name">{att.name}</span>
           </div>
         )

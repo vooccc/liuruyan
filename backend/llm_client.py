@@ -1893,7 +1893,7 @@ class LLMClient:
                         },
                         **({"thought_signature": tc["thought_signature"]} if tc.get("thought_signature") else {})
                     }
-                    for tc in sorted(current_tool_calls.values(), key=lambda x: x["id"])
+                    for tc in current_tool_calls.values()
                 ]
             }
             if current_content:
@@ -1936,7 +1936,7 @@ class LLMClient:
 
             all_tool_call_ids = [
                 tc["id"]
-                for tc in sorted(current_tool_calls.values(), key=lambda x: x["id"])
+                for tc in current_tool_calls.values()
                 if tc.get("id")
             ]
 
@@ -1964,12 +1964,15 @@ class LLMClient:
 
             if stream:
                 for tc in parsed_tool_calls:
-                    yield {
+                    tc_event: Dict[str, Any] = {
                         "type": "tool_call",
                         "name": tc["name"],
                         "input": tc["arguments"],
                         "tool_use_id": tc.get("id"),
                     }
+                    if tc.get("thought_signature"):
+                        tc_event["thought_signature"] = tc["thought_signature"]
+                    yield tc_event
 
             # valid → dispatch_batch 并发预取（read 类并发 gather，写类/独占串行）
             results_by_id = await self.tool_registry.dispatch_batch(
@@ -2149,12 +2152,16 @@ class LLMClient:
                         "raw_arguments": (raw_args or "")[:200].replace("\n", "\\n"),
                     })
                     continue
-                parsed_tool_calls.append({
+                tc_item: Dict[str, Any] = {
                     "id": tc["id"],
                     "name": fn_name,
                     "arguments": fn_args,
                     "_json_repair_layers": repair_layers,
-                })
+                }
+                tsig = tc.get("thought_signature") or tc.get("thoughtSignature")
+                if tsig:
+                    tc_item["thought_signature"] = tsig
+                parsed_tool_calls.append(tc_item)
             if invalid_tool_calls:
                 self._pad_tool_messages_for_invalid_batch(
                     messages,
@@ -2181,7 +2188,15 @@ class LLMClient:
                 return
             if stream:
                 for tc in parsed_tool_calls:
-                    yield {"type": "tool_call", "name": tc["name"], "input": tc["arguments"], "tool_use_id": tc.get("id")}
+                    tc_event = {
+                        "type": "tool_call",
+                        "name": tc["name"],
+                        "input": tc["arguments"],
+                        "tool_use_id": tc.get("id"),
+                    }
+                    if tc.get("thought_signature"):
+                        tc_event["thought_signature"] = tc["thought_signature"]
+                    yield tc_event
             results_by_id = await self.tool_registry.dispatch_batch(
                 parsed_tool_calls,
                 agent_id=_current_agent_id_var.get(),

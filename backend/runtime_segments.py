@@ -89,7 +89,7 @@ def append_stream_event_segment(
         # P0 契约：tool_use_id 入盘前保证非空。上游（anthropic_client / openai_client）
         # 理应已 ensure_tool_id；此处再兜一层防御，漏传时 synthesize + 打日志。
         raw_tool_id = event.get("tool_use_id") or event.get("id")
-        segments.append({
+        seg: Dict[str, Any] = {
             "id": len(segments),
             "type": "tool_call",
             "tool_name": event.get("name") or "",
@@ -98,7 +98,11 @@ def append_stream_event_segment(
             "input": event.get("input"),
             "tool_use_id": ensure_tool_id(raw_tool_id, origin="runtime_segment_tool_call"),
             "agent_id": agent_id,
-        })
+        }
+        thought_sig = event.get("thought_signature") or event.get("thoughtSignature")
+        if thought_sig:
+            seg["thought_signature"] = thought_sig
+        segments.append(seg)
         return
 
     if etype == "tool_result":

@@ -153,6 +153,31 @@ class AnthropicApiClient:
         """
         system_extracted, anthropic_messages = to_anthropic_messages(req.messages)
 
+        # 剥离 Gemini 专属 thought_signature / thoughtSignature：
+        # agent.build_messages 为 google-antigravity 也走 to_anthropic_messages 保留签名，
+        # 但真正发往 Anthropic Messages API 时 tool_use block 不允许携带未知字段（会 400）。
+        sanitized_messages: list[Dict[str, Any]] = []
+        for msg in anthropic_messages:
+            if msg.get("role") == "assistant" and isinstance(msg.get("content"), list):
+                new_blocks = []
+                changed = False
+                for blk in msg["content"]:
+                    if (
+                        isinstance(blk, dict)
+                        and blk.get("type") == "tool_use"
+                        and ("thought_signature" in blk or "thoughtSignature" in blk)
+                    ):
+                        blk = {
+                            k: v for k, v in blk.items()
+                            if k not in ("thought_signature", "thoughtSignature")
+                        }
+                        changed = True
+                    new_blocks.append(blk)
+                sanitized_messages.append({**msg, "content": new_blocks} if changed else msg)
+            else:
+                sanitized_messages.append(msg)
+        anthropic_messages = sanitized_messages
+
         # System 字段三档优先级
         extras_system = req.extras.get("system") if req.extras else None
         if extras_system is not None:

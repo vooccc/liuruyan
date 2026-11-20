@@ -20,6 +20,8 @@ export interface ChatAttachment {
   error?: string
   /** 是否为图片（含粘贴截图）。决定 chip 渲染为缩略图卡片还是文本 chip。 */
   isImage?: boolean
+  /** 是否为音频文件（用于芯片区分显示音频图标）。 */
+  isAudio?: boolean
   /** 本地预览 URL（URL.createObjectURL），仅 isImage=true 时存在。remove/clear 时 revoke。 */
   thumbUrl?: string
 }
@@ -27,6 +29,11 @@ export interface ChatAttachment {
 function looksLikeImage(file: File): boolean {
   if (file.type && /^image\//i.test(file.type)) return true
   return /\.(png|jpe?g|gif|webp|bmp|svg|ico|tiff?|heic|heif)$/i.test(file.name)
+}
+
+function looksLikeAudio(file: File): boolean {
+  if (file.type && /^audio\//i.test(file.type)) return true
+  return /\.(mp3|wav|m4a|ogg|flac|aac|opus|wma|aiff|mpga|amr|webm)$/i.test(file.name)
 }
 
 export interface UseChatAttachmentsOptions {
@@ -48,6 +55,7 @@ export interface UseChatAttachmentsOptions {
 export function useChatAttachments(opts?: UseChatAttachmentsOptions) {
   const [attachments, setAttachments] = useState<ChatAttachment[]>([])
   const attachmentsRef = useRef<string[]>([])
+  const hasUploadingRef = useRef(false)
   // 用 ref 存 validateFile，避免 opts 每帧 new 导致 handleChooseFiles 重建
   const validateFileRef = useRef(opts?.validateFile)
   useEffect(() => {
@@ -58,6 +66,7 @@ export function useChatAttachments(opts?: UseChatAttachmentsOptions) {
     attachmentsRef.current = attachments
       .filter(a => a.status === 'ok' && a.path)
       .map(a => a.path as string)
+    hasUploadingRef.current = attachments.some(a => a.status === 'uploading')
   }, [attachments])
 
   const handleChooseFiles = useCallback(async (files: FileList | File[] | null) => {
@@ -72,6 +81,7 @@ export function useChatAttachments(opts?: UseChatAttachmentsOptions) {
       const err = validateFileRef.current?.(f)
       const baseId = `att_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
       const isImg = looksLikeImage(f)
+      const isAud = !isImg && looksLikeAudio(f)
       // 即使后续 validateFile 拒收，也生成缩略图，让用户看到自己粘的是哪张
       // （比如非 vision 模型拒图时，用户能立即看到"哦这张图发不了"而非看到一行文字 chip 不知所云）
       const thumbUrl = isImg ? URL.createObjectURL(f) : undefined
@@ -84,6 +94,7 @@ export function useChatAttachments(opts?: UseChatAttachmentsOptions) {
           status: 'failed' as const,
           error: err,
           isImage: isImg,
+          isAudio: isAud,
           thumbUrl,
         })
       } else {
@@ -95,10 +106,14 @@ export function useChatAttachments(opts?: UseChatAttachmentsOptions) {
           mime: f.type || undefined,
           status: 'uploading' as const,
           isImage: isImg,
+          isAudio: isAud,
           thumbUrl,
         })
         toUpload.push(f)
       }
+    }
+    if (toUpload.length > 0) {
+      hasUploadingRef.current = true
     }
     setAttachments(prev => [...prev, ...newChips])
 
@@ -159,5 +174,5 @@ export function useChatAttachments(opts?: UseChatAttachmentsOptions) {
     }
   }, [])
 
-  return { attachments, attachmentsRef, handleChooseFiles, removeAttachment, clearAttachments }
+  return { attachments, attachmentsRef, hasUploadingRef, handleChooseFiles, removeAttachment, clearAttachments }
 }

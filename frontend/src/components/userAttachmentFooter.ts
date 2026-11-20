@@ -13,7 +13,19 @@ import { API_BASE } from '../api/base'
  */
 
 const ATTACHMENT_HEADER = '[附件 / 用户上传，请用 read_file 工具读取]'
+const AUDIO_ATTACHMENT_HEADER = '[附件 / 用户上传音频，请用 transcribe_audio 工具转写]'
+const LEGACY_ATTACHMENT_HEADER = '[附件 / 用户上传]'
+const ATTACHMENT_HEADERS = [
+  ATTACHMENT_HEADER,
+  AUDIO_ATTACHMENT_HEADER,
+  LEGACY_ATTACHMENT_HEADER,
+] as const
 const _IMG_RE = /\.(png|jpe?g|gif|webp|bmp|svg|ico|tiff?|heic|heif)$/i
+const _AUDIO_RE = /\.(mp3|wav|m4a|ogg|flac|aac|opus|wma|aiff|mpga|amr|webm)$/i
+
+export function isAudioAttachmentPath(path: string): boolean {
+  return _AUDIO_RE.test(String(path || '').trim())
+}
 
 /**
  * 给用户消息文本拼上 attachment footer，供前端"乐观渲染"路径用。
@@ -37,8 +49,10 @@ export interface UserMessageAttachment {
   path: string
   /** basename，用于 alt / caption / hover 提示。 */
   name: string
-  /** 是否图片（按扩展名判定）。仅图片走缩略图渲染，其它类型当前先不显示卡片。 */
+  /** 是否图片（按扩展名判定）。仅图片走缩略图渲染，其它类型走紧凑 chip。 */
   isImage: boolean
+  /** 是否音频（按扩展名判定）。 */
+  isAudio?: boolean
 }
 
 export interface ParsedUserMessageContent {
@@ -57,7 +71,13 @@ export interface ParsedUserMessageContent {
 export function parseUserMessageAttachments(text: string | null | undefined): ParsedUserMessageContent {
   const raw = String(text || '')
   if (!raw) return { cleanedText: raw, attachments: [] }
-  const idx = raw.indexOf(ATTACHMENT_HEADER)
+  let idx = -1
+  for (const header of ATTACHMENT_HEADERS) {
+    const pos = raw.indexOf(header)
+    if (pos !== -1 && (idx === -1 || pos < idx)) {
+      idx = pos
+    }
+  }
   if (idx === -1) return { cleanedText: raw, attachments: [] }
 
   const before = raw.slice(0, idx).replace(/\s+$/, '')
@@ -71,10 +91,12 @@ export function parseUserMessageAttachments(text: string | null | undefined): Pa
     const path = trimmed.replace(/^-\s*/, '').trim()
     if (!path) continue
     const name = path.split(/[\\/]/).filter(Boolean).pop() || path
+    const isImg = _IMG_RE.test(name)
     attachments.push({
       path,
       name,
-      isImage: _IMG_RE.test(name),
+      isImage: isImg,
+      isAudio: !isImg && _AUDIO_RE.test(name),
     })
   }
 

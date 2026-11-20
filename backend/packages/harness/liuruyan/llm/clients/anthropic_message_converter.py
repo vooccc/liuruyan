@@ -121,12 +121,16 @@ def to_anthropic_messages(messages: List[Dict[str, Any]]) -> Tuple[Optional[str]
                     parsed_args = {}
                 if not isinstance(parsed_args, dict):
                     parsed_args = {}
-                blocks.append({
+                tool_use_block: Dict[str, Any] = {
                     "type": "tool_use",
                     "id": _sanitize_tool_id(tc.get("id", ""), origin="anthropic_adapter_tool_use"),
                     "name": str(fn.get("name", "")),
                     "input": parsed_args,
-                })
+                }
+                tsig = tc.get("thought_signature") or tc.get("thoughtSignature")
+                if tsig:
+                    tool_use_block["thought_signature"] = tsig
+                blocks.append(tool_use_block)
 
             # 空 assistant 兜底（Anthropic 拒绝完全空的 content）
             if not blocks:

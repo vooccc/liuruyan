@@ -80,12 +80,16 @@ def _segments_to_v3_blocks(
             elif not isinstance(args, dict):
                 args = {}
             if tool_use_id and name:
-                assistant_blocks.append({
+                tool_block: Dict = {
                     "type": "tool_use",
                     "id": str(tool_use_id),
                     "name": str(name),
                     "input": args,
-                })
+                }
+                thought_sig = seg.get("thought_signature") or seg.get("thoughtSignature")
+                if thought_sig:
+                    tool_block["thought_signature"] = thought_sig
+                assistant_blocks.append(tool_block)
         elif stype == "tool_result":
             tool_use_id = seg.get("tool_use_id") or ""
             if not tool_use_id:

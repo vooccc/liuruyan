@@ -69,7 +69,7 @@ export default function ChatInputTopToolbar({
       <button
         type="button"
         className="input-tool-btn"
-        title="上传附件（PDF / Office / 图片 / 任意文件，50 MB 上限）"
+        title="上传附件（PDF / Office / 图片 / 音频 / 任意文件，50 MB 上限）"
         aria-label="上传附件"
         onClick={handleClickAttach}
       >

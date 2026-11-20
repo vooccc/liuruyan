@@ -10,13 +10,17 @@ ChatCompletion 标准消息序列，然后按目标 provider 转换成对应 API
 - E (2026-05-20)：盘上 v1/v2 残留扫描 0 条后，清掉兼容分支 + 函数文件改名 ✓
 """
 
-from .history_to_openai_std import history_entry_to_openai_std
+from .history_to_openai_std import (
+    history_entry_to_openai_std,
+    normalize_history_to_openai_std,
+)
 from .anthropic_native import to_anthropic_messages, convert_tools_to_anthropic
 from .openai_compat import to_openai_messages
 from .provider import infer_provider_kind, clear_provider_cache, ProviderKind
 
 __all__ = [
     "history_entry_to_openai_std",
+    "normalize_history_to_openai_std",
     "to_anthropic_messages",
     "convert_tools_to_anthropic",
     "to_openai_messages",

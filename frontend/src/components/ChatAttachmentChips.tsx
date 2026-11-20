@@ -1,5 +1,5 @@
 import { useState, type MouseEvent } from 'react'
-import { AlertCircle, FileText, Loader2, X } from 'lucide-react'
+import { AlertCircle, FileAudio, FileText, Loader2, X } from 'lucide-react'
 import type { ChatAttachment } from './useChatAttachments'
 import ImageLightbox from './ImageLightbox'
 
@@ -107,7 +107,7 @@ export default function ChatAttachmentChips({ attachments, onRemove }: ChatAttac
           >
             <span className="chat-attachment-chip-icon">
               {att.status === 'uploading' && <Loader2 size={12} className="chat-attachment-spinner" />}
-              {att.status === 'ok' && <FileText size={12} />}
+              {att.status === 'ok' && (att.isAudio ? <FileAudio size={12} /> : <FileText size={12} />)}
               {att.status === 'failed' && <AlertCircle size={12} />}
             </span>
             <span className="chat-attachment-chip-name" title={att.name}>{att.name}</span>
