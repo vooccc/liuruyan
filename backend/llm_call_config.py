@@ -19,12 +19,15 @@
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
 
 from .agent_config import get_agent_active_model
 from .providers.capabilities import infer_capabilities, infer_context_length, resolve_model_capabilities
 from .providers.store import find_model, load_providers_config_cached
+
+logger = logging.getLogger(__name__)
 
 
 HeadersTuple = Optional[Tuple[Tuple[str, str], ...]]
@@ -56,7 +59,7 @@ class CallModelConfig:
 
     api_key: str
     """API key；空字符串 '' 合法（无 key provider，如 ollama / lmstudio）。
-    
+
     ⚠️ 即便为空也必须显式保留 ''，**不要**让下游 fallback 读 env 里的
     OPENAI_API_KEY——这是 provider_registry.py:132-140 修过的坑。"""
 
@@ -100,6 +103,142 @@ class ModelResolutionError(Exception):
     """
 
 
+def _build_pro_call_config(
+    model: str,
+    provider_id: str,
+    matched_pro_model: Dict[str, Any],
+) -> CallModelConfig:
+    pro_tags = tuple(
+        resolve_model_capabilities(
+            model,
+            provider_id=provider_id,
+            explicit_tags=matched_pro_model.get("tags"),
+            name=matched_pro_model.get("name"),
+        )
+    )
+    pro_ctx = (
+        matched_pro_model.get("context_window")
+        or matched_pro_model.get("context_length")
+        or infer_context_length(model)
+        or 1048576
+    )
+    return CallModelConfig(
+        provider_id=provider_id,
+        model=model,
+        api_key="PRO_ACCOUNT_MANAGED",
+        base_url="https://generativelanguage.googleapis.com",
+        transport="openai_chat",
+        context_length=pro_ctx,
+        tags=pro_tags,
+    )
+
+
+def _match_pro_model(
+    pro_providers: list,
+    model: str,
+    provider_hint: Optional[str] = None,
+) -> Optional[Tuple[str, Dict[str, Any]]]:
+    if not pro_providers:
+        return None
+    if provider_hint:
+        pid_l = provider_hint.lower()
+        for vp in pro_providers:
+            vp_id = vp.get("id") or ""
+            if vp_id.lower() == pid_l or (pid_l == "google" and vp_id == "google-antigravity"):
+                matched = next((m for m in vp.get("models", []) if m.get("id") == model), None)
+                if matched is not None:
+                    return provider_hint, matched
+        return None
+    for vp in pro_providers:
+        matched = next((m for m in vp.get("models", []) if m.get("id") == model), None)
+        if matched is not None:
+            return vp.get("id", "google-antigravity"), matched
+    return None
+
+
+def _build_standard_call_config(pc, model: str) -> CallModelConfig:
+    model_entry = next((m for m in pc.models if m.id == model), None)
+    configured_context = getattr(model_entry, "context_length", None) if model_entry else None
+    configured_tags = getattr(model_entry, "tags", None) if model_entry else None
+    model_name = getattr(model_entry, "name", None) if model_entry else None
+    effective_tags = (
+        tuple(configured_tags)
+        if configured_tags
+        else tuple(infer_capabilities(model, model_name))
+    )
+
+    return CallModelConfig(
+        provider_id=pc.id,
+        model=model,
+        api_key=pc.api_key or "",
+        base_url=pc.base_url or "",
+        transport=pc.transport,
+        extra_headers=_freeze_headers(pc.extra_headers),
+        context_length=configured_context or infer_context_length(model),
+        tags=effective_tags,
+    )
+
+
+def _resolve_candidate(
+    config: Dict[str, Any],
+    pro_providers: list,
+    is_pro_fn,
+    model: str,
+    own_provider_hint: Optional[str],
+    fallback_provider_hint: Optional[str],
+    strict_provider: bool = False,
+) -> Optional[CallModelConfig]:
+    """尝试解析单层 (model, own_provider_hint)。
+
+    - strict_provider=True（override 同时传了 override_provider）：严格按指定 provider 匹配，
+      不放宽到其他 provider。
+    - own_provider_hint 非空（session.provider / agent.active_model.provider_id 明确指定了某家）：
+      只在该 provider 下匹配（不静默跳去另一家同名模型）；找不到返回 None，由上层决定报错或回退。
+    - own_provider_hint 为空（老数据或未指定 provider）：先用 fallback_provider_hint 试探，
+      再放宽扫描算力账号与全部普通 provider。
+    """
+    if strict_provider and own_provider_hint:
+        if is_pro_fn and is_pro_fn(own_provider_hint):
+            hit = _match_pro_model(pro_providers, model, own_provider_hint)
+            if hit is not None:
+                return _build_pro_call_config(model, hit[0], hit[1])
+            return None
+        pc = find_model(config, model, own_provider_hint)
+        if pc is None:
+            return None
+        return _build_standard_call_config(pc, model)
+
+    if own_provider_hint:
+        if is_pro_fn and is_pro_fn(own_provider_hint):
+            hit = _match_pro_model(pro_providers, model, own_provider_hint)
+            if hit is not None:
+                return _build_pro_call_config(model, hit[0], hit[1])
+            return None
+        pc = find_model(config, model, own_provider_hint)
+        if pc is not None:
+            return _build_standard_call_config(pc, model)
+        return None
+
+    if fallback_provider_hint:
+        if is_pro_fn and is_pro_fn(fallback_provider_hint):
+            hit = _match_pro_model(pro_providers, model, fallback_provider_hint)
+            if hit is not None:
+                return _build_pro_call_config(model, hit[0], hit[1])
+        else:
+            pc = find_model(config, model, fallback_provider_hint)
+            if pc is not None:
+                return _build_standard_call_config(pc, model)
+
+    hit = _match_pro_model(pro_providers, model, None)
+    if hit is not None:
+        return _build_pro_call_config(model, hit[0], hit[1])
+
+    pc = find_model(config, model, None)
+    if pc is not None:
+        return _build_standard_call_config(pc, model)
+    return None
+
+
 def resolve_call_model_config(
     agent_id: Optional[str] = None,
     override: Optional[str] = None,
@@ -109,13 +248,13 @@ def resolve_call_model_config(
     """解析单次 LLM 调用的 model 配置（不写任何全局/单例字段，并发安全）。
 
     优先级（从高到低）：
-      1. `override` —— 显式 model id（消息级临时切换）
-      2. `session.model` —— 会话级（来自 session.json 持久化字段）
-      3. `agent_config.active_model.model` —— 角色级默认（**Commit 1.3 落地后启用**）
+      1. `override` —— 显式 model id（消息级临时切换；找不到直接 raise，不静默回退）
+      2. `session.model` —— 会话级（来自 session.json 持久化字段；若已失效则回退下一级）
+      3. `agent_config.active_model.model` —— 角色级默认（若已失效/禁用则回退到全局）
       4. `providers.current_model` —— 全局默认
 
     Args:
-        agent_id: 角色 id；本 commit 暂未消费，保留参数位防止后续调用点反复改签名
+        agent_id: 角色 id
         override: 单次 override 的 model id
         session: 任意带 `.model` 属性的对象（一般是 Session 实例）
         override_provider: 单次 override 的 provider id（前端 picker 切的 provider）。
@@ -145,142 +284,78 @@ def resolve_call_model_config(
     agent_model = (agent_active or {}).get("model") or None
     agent_provider_hint = (agent_active or {}).get("provider_id") or None
 
-    # 优先级：override > session > agent > global
-    model = override or session_model or agent_model or global_model
-    if not model:
+    is_pro_fn = None
+    pro_providers: list = []
+    try:
+        from backend.compute_accounts.models_provider import is_pro_provider, get_pro_providers
+        is_pro_fn = is_pro_provider
+        pro_providers = get_pro_providers()
+    except Exception:
+        pass
+
+    # 1. override（显式请求级）：找不到直接报错，绝不静默降级
+    if override:
+        strict_mode = bool(override_provider)
+        resolved = _resolve_candidate(
+            config,
+            pro_providers,
+            is_pro_fn,
+            override,
+            own_provider_hint=override_provider or None,
+            fallback_provider_hint=global_provider_hint,
+            strict_provider=strict_mode,
+        )
+        if resolved is not None:
+            return resolved
+        if strict_mode:
+            raise ModelResolutionError(
+                f"model {override!r} 不在 provider {override_provider!r} 下；"
+                f"前端 picker 选了该 (model, provider) 组合但 providers store 找不到，"
+                f"请检查 /providers 是否同步或换一个组合"
+            )
+        raise ModelResolutionError(
+            f"model {override!r} 不在任何 provider 下；"
+            f"请在 /providers 配置或换一个 model id"
+        )
+
+    # 2~4. session > agent > global：若上层持久化的模型已被禁用或移除，自动回退下一级
+    candidates = [
+        ("session", session_model, session_provider_hint),
+        ("agent", agent_model, agent_provider_hint),
+        ("global", global_model, global_provider_hint),
+    ]
+    first_non_empty_model: Optional[str] = None
+    for layer, cand_model, cand_provider in candidates:
+        if not cand_model:
+            continue
+        if first_non_empty_model is None:
+            first_non_empty_model = cand_model
+        resolved = _resolve_candidate(
+            config,
+            pro_providers,
+            is_pro_fn,
+            cand_model,
+            own_provider_hint=cand_provider or None,
+            fallback_provider_hint=None if layer == "global" else global_provider_hint,
+            strict_provider=False,
+        )
+        if resolved is not None:
+            return resolved
+        logger.debug(
+            "[LLMCallConfig] %s 层模型 (%r, provider=%r) 已失效或未启用，回退下一级",
+            layer,
+            cand_model,
+            cand_provider,
+        )
+
+    if not first_non_empty_model:
         raise ModelResolutionError(
             "无法解析任何 model id（override / session.model / agent.active_model / "
             "global current_model 全为空）"
         )
-
-    # 优先检查是否为算力账号虚拟通道（整目录删除时捕获异常自动跳过）
-    try:
-        from backend.compute_accounts.models_provider import is_pro_provider, get_pro_providers
-        explicit_pro = (
-            override_provider if is_pro_provider(override_provider)
-            else (session_provider_hint if (is_pro_provider(session_provider_hint) and model == session_model)
-            else (agent_provider_hint if (is_pro_provider(agent_provider_hint) and model == agent_model)
-            else (global_provider_hint if (is_pro_provider(global_provider_hint) and model == global_model)
-            else None)))
-        )
-        pro_providers = get_pro_providers()
-        if explicit_pro:
-            pid_l = explicit_pro.lower()
-            matched_pro_model = None
-            for vp in pro_providers:
-                if (vp.get("id") or "").lower() == pid_l or (pid_l == "google" and vp.get("id") == "google-antigravity"):
-                    matched_pro_model = next((m for m in vp.get("models", []) if m.get("id") == model), None)
-                    if matched_pro_model is not None:
-                        break
-            if matched_pro_model is None:
-                for vp in pro_providers:
-                    matched_pro_model = next((m for m in vp.get("models", []) if m.get("id") == model), None)
-                    if matched_pro_model is not None:
-                        break
-            pro_tags = tuple(
-                resolve_model_capabilities(
-                    model,
-                    provider_id=explicit_pro,
-                    explicit_tags=matched_pro_model.get("tags") if matched_pro_model else None,
-                    name=matched_pro_model.get("name") if matched_pro_model else None,
-                )
-            )
-            pro_ctx = (
-                (matched_pro_model.get("context_window") or matched_pro_model.get("context_length"))
-                if matched_pro_model
-                else None
-            ) or infer_context_length(model) or 1048576
-            return CallModelConfig(
-                provider_id=explicit_pro,
-                model=model,
-                api_key="PRO_ACCOUNT_MANAGED",
-                base_url="https://generativelanguage.googleapis.com",
-                transport="openai_chat",
-                context_length=pro_ctx,
-                tags=pro_tags,
-            )
-        for vp in pro_providers:
-            found = next((m for m in vp.get("models", []) if m.get("id") == model), None)
-            if found is not None:
-                pro_tags = tuple(
-                    resolve_model_capabilities(
-                        model,
-                        provider_id=vp.get("id", "google-antigravity"),
-                        explicit_tags=found.get("tags"),
-                        name=found.get("name"),
-                    )
-                )
-                pro_ctx = found.get("context_window") or found.get("context_length") or infer_context_length(model) or 1048576
-                return CallModelConfig(
-                    provider_id=vp.get("id", "google-antigravity"),
-                    model=model,
-                    api_key="PRO_ACCOUNT_MANAGED",
-                    base_url="https://generativelanguage.googleapis.com",
-                    transport="openai_chat",
-                    context_length=pro_ctx,
-                    tags=pro_tags,
-                )
-    except Exception:
-        pass
-
-    # 严格模式：override 同时带了 model 和 provider（前端 picker 显式切的二元组），
-    # 必须按 (override, override_provider) 严格匹配，不放宽 fallback——这是为了
-
-    # 解决"同一个 model id 在多个 provider 下都存在（比如 getrouter 和 llmapi 都有
-    # claude-opus-4-7），仅靠 model id 反查会永远命中第一家"的 bug。
-    # 找不到直接 raise，让前端立刻收到清晰错误而不是静默走错家。
-    strict_mode = bool(override) and bool(override_provider) and model == override
-    if strict_mode:
-        pc = find_model(config, model, override_provider)
-        if pc is None:
-            raise ModelResolutionError(
-                f"model {model!r} 不在 provider {override_provider!r} 下；"
-                f"前端 picker 选了该 (model, provider) 组合但 providers store 找不到，"
-                f"请检查 /providers 是否同步或换一个组合"
-            )
-    else:
-        # 非严格路径（向后兼容）：跟着选中的 model 走那一层的 hint，否则降到全局
-        if model == override:
-            provider_hint = global_provider_hint
-        elif model == session_model:
-            provider_hint = session_provider_hint or global_provider_hint
-        elif model == agent_model:
-            provider_hint = agent_provider_hint or global_provider_hint
-        else:
-            provider_hint = global_provider_hint
-
-        pc = find_model(config, model, provider_hint)
-        if pc is None and provider_hint:
-            # hint 限制下未命中 → 放宽到全 provider 扫描。
-            # 场景：用户在前端选了 model 'X' 但当时 current_provider 不对，
-            # 或 override 一个跨 provider 的 model 而 hint 仍是上一次的 provider。
-            # 这里放宽避免假性"找不到"，实际 model 存在则照常工作。
-            pc = find_model(config, model, None)
-        if pc is None:
-            raise ModelResolutionError(
-                f"model {model!r} 不在任何 provider 下；"
-                f"请在 /providers 配置或换一个 model id"
-            )
-
-    model_entry = next((m for m in pc.models if m.id == model), None)
-    configured_context = getattr(model_entry, "context_length", None) if model_entry else None
-    configured_tags = getattr(model_entry, "tags", None) if model_entry else None
-    model_name = getattr(model_entry, "name", None) if model_entry else None
-    effective_tags = (
-        tuple(configured_tags)
-        if configured_tags
-        else tuple(infer_capabilities(model, model_name))
-    )
-
-    return CallModelConfig(
-        provider_id=pc.id,
-        model=model,
-        api_key=pc.api_key or "",
-        base_url=pc.base_url or "",
-        transport=pc.transport,
-        extra_headers=_freeze_headers(pc.extra_headers),
-        context_length=configured_context or infer_context_length(model),
-        tags=effective_tags,
+    raise ModelResolutionError(
+        f"model {first_non_empty_model!r} 不在任何 provider 下；"
+        f"请在 /providers 配置或换一个 model id"
     )
 
 

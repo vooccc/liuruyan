@@ -70,6 +70,24 @@ class NamespaceUpdateRequest(BaseModel):
     agent_id: Optional[str] = None
 
 
+class NamespaceRebuildRequest(BaseModel):
+    agent_id: Optional[str] = None
+    use_llm: bool = True
+
+
+class NamespaceTopicMergeRequest(BaseModel):
+    source_topic: str
+    target_topic: str
+    merged_content: Optional[str] = None
+    agent_id: Optional[str] = None
+
+
+class UserProfileEvolveRequest(BaseModel):
+    insight: str
+    reason: Optional[str] = ""
+    agent_id: Optional[str] = None
+
+
 @router.post("/memory")
 async def add_memory(request: MemoryRequest):
     """添加记忆"""
@@ -220,11 +238,75 @@ async def update_user_profile(request: MemoryUpdateRequest, agent_id: Optional[s
 
 @router.post("/memory/user/reset")
 async def reset_user_profile(agent_id: Optional[str] = None):
-    """重置用户画像为默认模板"""
+    """重置用户画像为默认模板（先留历史快照，支持撤销）"""
     from backend.agent_config import DEFAULT_USER_MD
-    memory_manager = get_memory_manager(agent_id=agent_id or "default")
+    from backend.user_profile_evolver import UserProfileEvolver
+
+    aid = agent_id or "default"
+    memory_manager = get_memory_manager(agent_id=aid)
+    evolver = UserProfileEvolver(None, memory_manager)
+    prev = memory_manager.read_user_profile()
+    if prev and prev.strip() != DEFAULT_USER_MD.strip():
+        evolver._append_history(
+            insight="重置用户画像为默认模板",
+            reason="手动重置",
+            session_id="",
+            prev_content=prev,
+            new_chars=len(DEFAULT_USER_MD),
+            kind="reset",
+        )
     memory_manager.write_user_profile(DEFAULT_USER_MD)
     return {"status": "success", "ok": True, "content": DEFAULT_USER_MD}
+
+
+@router.get("/memory/user/history")
+async def list_user_profile_history(agent_id: Optional[str] = None, limit: int = 20):
+    """获取 USER.md 自动演进历史记录（支持回滚）。"""
+    from backend.user_profile_evolver import UserProfileEvolver
+
+    memory_manager = get_memory_manager(agent_id=agent_id or "default")
+    evolver = UserProfileEvolver(None, memory_manager)
+    return {"history": evolver.list_history(limit=limit)}
+
+
+@router.post("/memory/user/rollback/{entry_id}")
+async def rollback_user_profile(entry_id: str, agent_id: Optional[str] = None):
+    """将 USER.md 回滚到指定历史条目修改前的版本。"""
+    from backend.user_profile_evolver import UserProfileEvolver
+
+    memory_manager = get_memory_manager(agent_id=agent_id or "default")
+    evolver = UserProfileEvolver(None, memory_manager)
+    restored = evolver.rollback(entry_id)
+    if restored is None:
+        raise HTTPException(status_code=404, detail=f"画像历史条目不存在: {entry_id}")
+    return {"status": "success", "ok": True, "content": restored}
+
+
+@router.post("/memory/user/evolve")
+async def evolve_user_profile(request: UserProfileEvolveRequest, agent_id: Optional[str] = None):
+    """手动补充一条偏好/习惯认知，由引擎去重融合进 USER.md 对应章节。"""
+    from backend.user_profile_evolver import UserProfileEvolver
+
+    aid = request.agent_id or agent_id or "default"
+    memory_manager = get_memory_manager(agent_id=aid)
+    try:
+        llm_client = get_agent(aid).llm_client
+    except Exception:
+        llm_client = None
+    evolver = UserProfileEvolver(llm_client, memory_manager)
+    res = evolver.evolve(
+        request.insight,
+        reason=request.reason or "用户在记忆浏览器手动补充",
+        kind="manual",
+    )
+    return {
+        "status": "success",
+        "ok": True,
+        "updated": res["updated"],
+        "history_id": res.get("history_id"),
+        "skipped_reason": res.get("skipped_reason", ""),
+        "content": memory_manager.read_user_profile(),
+    }
 
 
 # ====== v5 项目命名空间（2026-10-24）======
@@ -287,8 +369,15 @@ async def delete_namespace(ns_id: str, agent_id: Optional[str] = None):
 
 
 @router.get("/memory/namespaces/{ns_id}")
-async def get_namespace(ns_id: str, agent_id: Optional[str] = None):
-    """读取项目详情：注册表项 + 状态卡 + timeline 尾部。"""
+async def get_namespace(
+    ns_id: str,
+    agent_id: Optional[str] = None,
+    timeline_limit: int = 50,
+    timeline_offset: int = 0,
+    q: Optional[str] = None,
+    newest_first: bool = False,
+):
+    """读取项目详情：注册表项 + 状态卡 + timeline（支持分页与搜索）。"""
     manager = _ns_manager(agent_id)
     entry = manager.get_namespace(ns_id)
     if entry is None:
@@ -296,7 +385,90 @@ async def get_namespace(ns_id: str, agent_id: Optional[str] = None):
     return {
         "namespace": entry,
         "card": manager.read_card(ns_id),
-        "timeline": manager.read_timeline(ns_id, limit=50),
+        "topics": manager.list_topics(ns_id),
+        "timeline": manager.read_timeline(
+            ns_id,
+            limit=timeline_limit,
+            offset=timeline_offset,
+            query=q,
+            newest_first=newest_first,
+        ),
+        "timeline_total": manager.count_timeline(ns_id, query=q),
+    }
+
+
+@router.get("/memory/namespaces/{ns_id}/topics/{topic_name}")
+async def get_namespace_topic(
+    ns_id: str, topic_name: str, agent_id: Optional[str] = None
+):
+    """读取项目下单个专题树叉正文。"""
+    manager = _ns_manager(agent_id)
+    if manager.get_namespace(ns_id) is None:
+        raise HTTPException(status_code=404, detail=f"项目命名空间不存在: {ns_id}")
+    content = manager.read_topic(ns_id, topic_name)
+    if not content:
+        raise HTTPException(status_code=404, detail=f"专题树叉不存在: {topic_name}")
+    return {"topic": topic_name, "content": content}
+
+
+@router.put("/memory/namespaces/{ns_id}/topics/{topic_name}")
+async def update_namespace_topic(
+    ns_id: str,
+    topic_name: str,
+    request: MemoryUpdateRequest,
+    agent_id: Optional[str] = None,
+):
+    """创建或覆写项目下单个专题树叉正文。"""
+    manager = _ns_manager(agent_id)
+    if manager.get_namespace(ns_id) is None:
+        raise HTTPException(status_code=404, detail=f"项目命名空间不存在: {ns_id}")
+    try:
+        saved_name = manager.write_topic(ns_id, topic_name, request.content)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"status": "success", "ok": True, "topic": saved_name, "topics": manager.list_topics(ns_id)}
+
+
+@router.delete("/memory/namespaces/{ns_id}/topics/{topic_name}")
+async def delete_namespace_topic(
+    ns_id: str, topic_name: str, agent_id: Optional[str] = None
+):
+    """删除项目下单个专题树叉。"""
+    manager = _ns_manager(agent_id)
+    if manager.get_namespace(ns_id) is None:
+        raise HTTPException(status_code=404, detail=f"项目命名空间不存在: {ns_id}")
+    ok = manager.delete_topic(ns_id, topic_name)
+    if not ok:
+        raise HTTPException(status_code=404, detail=f"专题树叉不存在: {topic_name}")
+    return {"status": "success", "ok": True, "topics": manager.list_topics(ns_id)}
+
+
+@router.post("/memory/namespaces/{ns_id}/topics/merge")
+async def merge_namespace_topics(
+    ns_id: str,
+    request: NamespaceTopicMergeRequest,
+    agent_id: Optional[str] = None,
+):
+    """将源树叉合并或重命名到目标树叉。"""
+    manager = _ns_manager(request.agent_id or agent_id)
+    if manager.get_namespace(ns_id) is None:
+        raise HTTPException(status_code=404, detail=f"项目命名空间不存在: {ns_id}")
+    try:
+        merged_name = manager.merge_topics(
+            ns_id,
+            request.source_topic,
+            request.target_topic,
+            merged_content=request.merged_content,
+        )
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {
+        "status": "success",
+        "ok": True,
+        "target_topic": merged_name,
+        "topics": manager.list_topics(ns_id),
     }
 
 
@@ -304,12 +476,65 @@ async def get_namespace(ns_id: str, agent_id: Optional[str] = None):
 async def update_namespace_card(
     ns_id: str, request: MemoryUpdateRequest, agent_id: Optional[str] = None
 ):
-    """覆写项目状态卡（用户在记忆面板手动编辑）。timeline 不受影响。"""
+    """覆写项目状态卡（用户在记忆面板手动编辑）。timeline 不受影响，并同步刷新摘要。"""
+    from backend.namespace_manager import extract_card_summary
+
     manager = _ns_manager(agent_id)
     if manager.get_namespace(ns_id) is None:
         raise HTTPException(status_code=404, detail=f"项目命名空间不存在: {ns_id}")
     manager.write_card(ns_id, request.content)
-    return {"status": "success", "ok": True}
+    summary = extract_card_summary(request.content, max_len=100)
+    updated_entry = manager.update_namespace(ns_id, summary=summary) if summary else manager.get_namespace(ns_id)
+    return {"status": "success", "ok": True, "namespace": updated_entry}
+
+
+@router.post("/memory/namespaces/{ns_id}/rebuild-card")
+async def rebuild_namespace_card(
+    ns_id: str,
+    request: Optional[NamespaceRebuildRequest] = None,
+    agent_id: Optional[str] = None,
+):
+    """从 timeline.jsonl 重算项目状态卡（物化视图重建）。"""
+    from backend.memory_refiner_v2 import MemoryRefinerV2
+
+    aid = (request.agent_id if request else None) or agent_id or "default"
+    use_llm = request.use_llm if request is not None else True
+    manager = _ns_manager(aid)
+    if manager.get_namespace(ns_id) is None:
+        raise HTTPException(status_code=404, detail=f"项目命名空间不存在: {ns_id}")
+
+    mm = get_memory_manager(agent_id=aid)
+    llm_client = None
+    if use_llm:
+        try:
+            llm_client = get_agent(aid).llm_client
+        except Exception:
+            llm_client = None
+    refiner = MemoryRefinerV2(llm_client, mm)
+    card = refiner.rebuild_card_from_timeline(ns_id, use_llm=use_llm)
+    return {
+        "status": "success",
+        "ok": True,
+        "card": card,
+        "namespace": manager.get_namespace(ns_id),
+    }
+
+
+@router.get("/memory/namespaces-archived")
+async def list_archived_namespaces(agent_id: Optional[str] = None):
+    """列出 _archived/ 中被注销留底的项目备份（供误删恢复）。"""
+    manager = _ns_manager(agent_id)
+    return {"archived": manager.list_archived_backups()}
+
+
+@router.post("/memory/namespaces-archived/{folder_name}/restore")
+async def restore_archived_namespace(folder_name: str, agent_id: Optional[str] = None):
+    """从 _archived/ 恢复被注销的项目备份。"""
+    manager = _ns_manager(agent_id)
+    entry = manager.restore_archived_backup(folder_name)
+    if entry is None:
+        raise HTTPException(status_code=404, detail=f"归档备份不存在: {folder_name}")
+    return {"status": "success", "ok": True, "namespace": entry}
 
 
 @router.get("/memory/global")

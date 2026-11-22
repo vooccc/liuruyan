@@ -211,6 +211,7 @@ function AppInner() {
         }
         const params = new URLSearchParams()
         if (aid) params.set('agentId', aid)
+        if (currentSession?.id) params.set('sessionId', currentSession.id)
         new WebviewWindow(label, {
           url: `/#memory-browser${params.toString() ? `?${params.toString()}` : ''}`,
           title: '记忆浏览器',
@@ -275,7 +276,6 @@ function AppInner() {
     const stored = localStorage.getItem('primaryView')
     // 刷新时如果停留在设置页，自动切回聊天视图（避免看不到消息）
     if (stored === 'settings') return 'companions'
-    // 'media' 是旧 key（内容视图早期命名），读到旧值平滑迁移成 'content'，不丢用户上次停留的 tab
     return stored === 'roundtable' ? 'roundtable' : 'companions'
   })
   useEffect(() => {
@@ -1126,7 +1126,12 @@ function AppInner() {
       {/* 记忆面板 */}
       {showMemory && (
         <Suspense fallback={<LazyFeatureFallback label="记忆面板载入中..." />}>
-          <MemoryPanel onClose={() => setShowMemory(false)} agentId={currentAgentId || undefined} agents={agents} />
+          <MemoryPanel
+            onClose={() => setShowMemory(false)}
+            agentId={currentAgentId || undefined}
+            agents={agents}
+            currentSessionId={currentSession?.id}
+          />
         </Suspense>
       )}
 

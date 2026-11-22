@@ -218,8 +218,13 @@ export default function ChatModelPicker(props: ChatModelPickerProps) {
   } = props
 
   const currentProviderLike = useMemo(
-    () => modelToProviderLike(currentModelMeta),
-    [currentModelMeta],
+    () => currentModelMeta
+      ? modelToProviderLike(currentModelMeta)
+      : {
+          id: selectedProvider || '',
+          name: selectedProvider ? getBrandName(selectedProvider) : '',
+        },
+    [currentModelMeta, selectedProvider],
   )
   const currentBrandName =
     currentModelMeta?.provider_name || getBrandName(currentModelMeta?.provider)
@@ -345,7 +350,7 @@ export default function ChatModelPicker(props: ChatModelPickerProps) {
       >
         <ProviderAvatar provider={currentProviderLike} size={16} badge={false} className="model-current-brand" />
         <span className="model-current-name">
-          {currentModelMeta?.name || CHAT_UI_TEXT.defaultModelName}
+          {currentModelMeta?.name || selectedModel || CHAT_UI_TEXT.defaultModelName}
         </span>
         {currentContextLabel && (
           <span

@@ -118,14 +118,19 @@ export function useChatModelManager(args: UseChatModelManagerArgs = {}) {
     getActiveModel(scope, activeAgentId || undefined)
       .then((res) => {
         if (cancelled) return
-        if (res.model) {
-          setEffectiveFallback({
-            model: res.model,
-            provider: res.provider_id || '',
-          })
+        setEffectiveFallback(
+          res.model
+            ? { model: res.model, provider: res.provider_id || '' }
+            : null,
+        )
+      })
+      .catch((err) => {
+        if (cancelled) return
+        // 404 代表所有层级均无可用模型（如全局默认刚被删除），清空旧值避免残留；网络错误保留兜底
+        if (err instanceof Error && err.message.startsWith('[404]')) {
+          setEffectiveFallback(null)
         }
       })
-      .catch(() => { /* 拉不到就保留 listModels 兜底 */ })
     return () => { cancelled = true }
   }, [activeAgentId])
 
@@ -236,18 +241,23 @@ export function useChatModelManager(args: UseChatModelManagerArgs = {}) {
       .catch(() => {})
   }, [applyModelCatalog])
 
-  // 监听 ProviderSettings 改动 providers/models 后的事件 → 立即重拉 listModels()
-  // 让聊天界面顶部的模型下拉列表实时反映新增/删除/改名，无需重启应用。
-  // 修复：以前只在 mount 时拉一次，用户在设置里加了模型后必须重启才能看到。
+  // 监听 ProviderSettings / ComputeAccounts 改动 providers/models 或全局默认后的事件：
+  // 同时重拉 listModels() 与 effectiveFallback，保证回到聊天页 / 新开会话无需刷新即可同步最新默认模型。
   useEffect(() => {
+    let cancelEffective: (() => void) | undefined
     const handler = () => {
       listModels()
         .then(applyModelCatalog)
         .catch(() => {})
+      cancelEffective?.()
+      cancelEffective = refetchEffective()
     }
     window.addEventListener(MODELS_CATALOG_CHANGED_EVENT, handler)
-    return () => window.removeEventListener(MODELS_CATALOG_CHANGED_EVENT, handler)
-  }, [applyModelCatalog])
+    return () => {
+      cancelEffective?.()
+      window.removeEventListener(MODELS_CATALOG_CHANGED_EVENT, handler)
+    }
+  }, [applyModelCatalog, refetchEffective])
 
   // 监听"重置所有会话模型"信号：CharacterWorkshop 调用后端清完 session.model
   // 后会 dispatch 这个事件，hook 把内存里的 perSessionOverride 也整体清空。

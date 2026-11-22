@@ -535,10 +535,20 @@ async def set_current_model(body: dict):
     if pc is None:
         try:
             from backend.compute_accounts.models_provider import is_pro_provider, get_pro_providers
+            pro_providers = get_pro_providers()
             if is_pro_provider(provider):
-                is_pro = True
+                pid_l = (provider or "").lower()
+                for vp in pro_providers:
+                    vp_id = vp.get("id") or ""
+                    if (
+                        (vp_id.lower() == pid_l or (pid_l == "google" and vp_id == "google-antigravity"))
+                        and any(m["id"] == model_id for m in vp.get("models", []))
+                    ):
+                        is_pro = True
+                        provider = provider or vp_id
+                        break
             else:
-                for vp in get_pro_providers():
+                for vp in pro_providers:
                     if any(m["id"] == model_id for m in vp.get("models", [])):
                         is_pro = True
                         provider = vp.get("id", "google-antigravity")

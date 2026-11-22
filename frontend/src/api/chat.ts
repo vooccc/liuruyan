@@ -1394,6 +1394,58 @@ export async function resetUserProfile(agentId?: string): Promise<{ ok: boolean;
   return res.json()
 }
 
+export interface UserProfileHistoryItem {
+  id: string
+  ts: string
+  insight: string
+  reason?: string
+  session_id?: string
+  kind?: string
+  prev_chars?: number
+  new_chars?: number
+}
+
+/** 获取用户画像演进历史 */
+export async function getUserProfileHistory(
+  agentId?: string,
+  limit = 20,
+): Promise<{ history: UserProfileHistoryItem[] }> {
+  const qs = new URLSearchParams({ limit: String(limit) })
+  if (agentId) qs.set('agent_id', agentId)
+  const res = await fetch(`${API_BASE}/memory/user/history?${qs.toString()}`)
+  if (!res.ok) throw new Error('Failed to get user profile history')
+  return res.json()
+}
+
+/** 回滚用户画像到指定历史条目修改前 */
+export async function rollbackUserProfile(
+  entryId: string,
+  agentId?: string,
+): Promise<{ ok: boolean; content: string }> {
+  const url = agentId
+    ? `${API_BASE}/memory/user/rollback/${encodeURIComponent(entryId)}?agent_id=${agentId}`
+    : `${API_BASE}/memory/user/rollback/${encodeURIComponent(entryId)}`
+  const res = await fetch(url, { method: 'POST' })
+  if (!res.ok) throw new Error('Failed to rollback user profile')
+  return res.json()
+}
+
+/** 手动补充一条偏好/习惯认知并智能融合进 USER.md */
+export async function evolveUserProfile(
+  insight: string,
+  agentId?: string,
+  reason?: string,
+): Promise<{ ok: boolean; updated: boolean; skipped_reason?: string; content: string }> {
+  const url = agentId ? `${API_BASE}/memory/user/evolve?agent_id=${agentId}` : `${API_BASE}/memory/user/evolve`
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ insight, reason: reason || '', agent_id: agentId }),
+  })
+  if (!res.ok) throw new Error('Failed to evolve user profile')
+  return res.json()
+}
+
 
 // ====== v5 项目命名空间（2026-10-24，跨项目记忆隔离）======
 
@@ -1408,21 +1460,58 @@ export interface ProjectNamespace {
   updated_at: string
 }
 
+export interface TimelineEntry {
+  ts?: string
+  event?: string
+  decision?: string
+  cognition?: string
+  detail?: string
+  topic?: string
+  tags?: string[]
+  temperature?: 'burning' | 'warm' | 'cold' | string
+  session_id?: string
+  [key: string]: unknown
+}
+
+export interface NamespaceTopic {
+  name: string
+  filename: string
+  summary: string
+  chars: number
+  updated_at: string
+}
+
+export interface ArchivedNamespaceBackup {
+  folder_name: string
+  base_id: string
+  name: string
+  summary: string
+  timeline_count: number
+  archived_at: string
+}
+
 export interface NamespaceListResult {
   active: boolean
   namespaces: ProjectNamespace[]
   stats?: {
     active: boolean
     count: number
+    active_count?: number
+    archived_count?: number
     global_chars: number
-    cards: Record<string, { chars: number; name: string }>
+    total_card_chars?: number
+    total_timeline_count?: number
+    total_topic_count?: number
+    cards: Record<string, { chars: number; timeline_count?: number; topic_count?: number; name: string; status?: string }>
   }
 }
 
 export interface NamespaceDetail {
   namespace: ProjectNamespace
   card: string
-  timeline: Array<Record<string, unknown>>
+  topics?: NamespaceTopic[]
+  timeline: TimelineEntry[]
+  timeline_total?: number
 }
 
 /** 项目注册表。active=false 表示未启用命名空间（无 REGISTRY.json）。 */
@@ -1452,22 +1541,30 @@ export async function createNamespace(
   return res.json()
 }
 
-/** 更新项目元数据（名称/别名/工作区锚/一行摘要）。 */
+/** 更新项目元数据（名称/别名/工作区锚/一行摘要/归档状态）。 */
 export async function updateNamespace(
   nsId: string,
-  patch: { name?: string; aliases?: string[]; workspace_path?: string | null; summary?: string; agentId?: string },
+  patch: {
+    name?: string
+    aliases?: string[]
+    workspace_path?: string | null
+    summary?: string
+    status?: 'active' | 'archived'
+    agentId?: string
+  },
 ): Promise<{ namespace: ProjectNamespace }> {
+  const { agentId, ...rest } = patch
   const res = await fetch(`${API_BASE}/memory/namespaces/${encodeURIComponent(nsId)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...patch, agent_id: patch.agentId ?? null }),
+    body: JSON.stringify({ ...rest, agent_id: agentId ?? null }),
   })
   if (!res.ok) throw new Error('Failed to update namespace')
   return res.json()
 }
 
 /** 注销项目（数据归档到 _archived/，不物理删除）。 */
-export async function deleteNamespace(nsId: string, agentId?: string): Promise<{ ok: boolean }> {
+export async function deleteNamespace(nsId: string, agentId?: string): Promise<{ ok?: boolean; status?: string }> {
   const url = agentId
     ? `${API_BASE}/memory/namespaces/${encodeURIComponent(nsId)}?agent_id=${agentId}`
     : `${API_BASE}/memory/namespaces/${encodeURIComponent(nsId)}`
@@ -1476,18 +1573,31 @@ export async function deleteNamespace(nsId: string, agentId?: string): Promise<{
   return res.json()
 }
 
-/** 项目详情：注册表项 + 状态卡 + timeline 尾部。 */
-export async function getNamespace(nsId: string, agentId?: string): Promise<NamespaceDetail> {
-  const url = agentId
-    ? `${API_BASE}/memory/namespaces/${encodeURIComponent(nsId)}?agent_id=${agentId}`
-    : `${API_BASE}/memory/namespaces/${encodeURIComponent(nsId)}`
+/** 项目详情：注册表项 + 状态卡 + timeline（支持分页与搜索）。 */
+export async function getNamespace(
+  nsId: string,
+  agentId?: string,
+  options?: { timelineLimit?: number; timelineOffset?: number; q?: string; newestFirst?: boolean },
+): Promise<NamespaceDetail> {
+  const params = new URLSearchParams()
+  if (agentId) params.set('agent_id', agentId)
+  if (options?.timelineLimit !== undefined) params.set('timeline_limit', String(options.timelineLimit))
+  if (options?.timelineOffset !== undefined) params.set('timeline_offset', String(options.timelineOffset))
+  if (options?.q) params.set('q', options.q)
+  if (options?.newestFirst !== undefined) params.set('newest_first', String(options.newestFirst))
+  const qs = params.toString()
+  const url = `${API_BASE}/memory/namespaces/${encodeURIComponent(nsId)}${qs ? `?${qs}` : ''}`
   const res = await noStoreFetch(url)
   if (!res.ok) throw new Error('Failed to get namespace')
   return res.json()
 }
 
 /** 覆写项目状态卡（记忆面板手动编辑）。 */
-export async function updateNamespaceCard(nsId: string, card: string, agentId?: string): Promise<{ ok: boolean }> {
+export async function updateNamespaceCard(
+  nsId: string,
+  card: string,
+  agentId?: string,
+): Promise<{ ok: boolean; namespace?: ProjectNamespace }> {
   const url = agentId
     ? `${API_BASE}/memory/namespaces/${encodeURIComponent(nsId)}/card?agent_id=${agentId}`
     : `${API_BASE}/memory/namespaces/${encodeURIComponent(nsId)}/card`
@@ -1497,6 +1607,119 @@ export async function updateNamespaceCard(nsId: string, card: string, agentId?: 
     body: JSON.stringify({ content: card }),
   })
   if (!res.ok) throw new Error('Failed to update namespace card')
+  return res.json()
+}
+
+/** 从 timeline.jsonl 重算项目状态卡（物化视图重建）。 */
+export async function rebuildNamespaceCard(
+  nsId: string,
+  options?: { agentId?: string; useLlm?: boolean },
+): Promise<{ ok: boolean; card: string; namespace?: ProjectNamespace }> {
+  const res = await fetch(`${API_BASE}/memory/namespaces/${encodeURIComponent(nsId)}/rebuild-card`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      agent_id: options?.agentId ?? null,
+      use_llm: options?.useLlm ?? true,
+    }),
+  })
+  if (!res.ok) throw new Error('Failed to rebuild namespace card')
+  return res.json()
+}
+
+/** 列出 _archived/ 中被注销的项目备份。 */
+export async function listArchivedNamespaces(
+  agentId?: string,
+): Promise<{ archived: ArchivedNamespaceBackup[] }> {
+  const url = agentId
+    ? `${API_BASE}/memory/namespaces-archived?agent_id=${agentId}`
+    : `${API_BASE}/memory/namespaces-archived`
+  const res = await noStoreFetch(url)
+  if (!res.ok) throw new Error('Failed to list archived namespaces')
+  return res.json()
+}
+
+/** 从 _archived/ 恢复被注销的项目。 */
+export async function restoreArchivedNamespace(
+  folderName: string,
+  agentId?: string,
+): Promise<{ ok: boolean; namespace: ProjectNamespace }> {
+  const url = agentId
+    ? `${API_BASE}/memory/namespaces-archived/${encodeURIComponent(folderName)}/restore?agent_id=${agentId}`
+    : `${API_BASE}/memory/namespaces-archived/${encodeURIComponent(folderName)}/restore`
+  const res = await fetch(url, { method: 'POST' })
+  if (!res.ok) throw new Error('Failed to restore archived namespace')
+  return res.json()
+}
+
+/** 读取项目下单个专题树叉正文。 */
+export async function getNamespaceTopic(
+  nsId: string,
+  topicName: string,
+  agentId?: string,
+): Promise<{ topic: string; content: string }> {
+  const url = agentId
+    ? `${API_BASE}/memory/namespaces/${encodeURIComponent(nsId)}/topics/${encodeURIComponent(topicName)}?agent_id=${agentId}`
+    : `${API_BASE}/memory/namespaces/${encodeURIComponent(nsId)}/topics/${encodeURIComponent(topicName)}`
+  const res = await noStoreFetch(url)
+  if (!res.ok) throw new Error('Failed to load topic')
+  return res.json()
+}
+
+/** 创建或更新项目下单个专题树叉正文。 */
+export async function updateNamespaceTopic(
+  nsId: string,
+  topicName: string,
+  content: string,
+  agentId?: string,
+): Promise<{ ok: boolean; topic: string; topics: NamespaceTopic[] }> {
+  const url = agentId
+    ? `${API_BASE}/memory/namespaces/${encodeURIComponent(nsId)}/topics/${encodeURIComponent(topicName)}?agent_id=${agentId}`
+    : `${API_BASE}/memory/namespaces/${encodeURIComponent(nsId)}/topics/${encodeURIComponent(topicName)}`
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  })
+  if (!res.ok) throw new Error('Failed to save topic')
+  return res.json()
+}
+
+/** 删除项目下单个专题树叉。 */
+export async function deleteNamespaceTopic(
+  nsId: string,
+  topicName: string,
+  agentId?: string,
+): Promise<{ ok: boolean; topics: NamespaceTopic[] }> {
+  const url = agentId
+    ? `${API_BASE}/memory/namespaces/${encodeURIComponent(nsId)}/topics/${encodeURIComponent(topicName)}?agent_id=${agentId}`
+    : `${API_BASE}/memory/namespaces/${encodeURIComponent(nsId)}/topics/${encodeURIComponent(topicName)}`
+  const res = await fetch(url, { method: 'DELETE' })
+  if (!res.ok) throw new Error('Failed to delete topic')
+  return res.json()
+}
+
+/** 合并或重命名专题树叉。 */
+export async function mergeNamespaceTopics(
+  nsId: string,
+  sourceTopic: string,
+  targetTopic: string,
+  options?: { mergedContent?: string; agentId?: string },
+): Promise<{ ok: boolean; target_topic: string; topics: NamespaceTopic[] }> {
+  const res = await fetch(
+    `${API_BASE}/memory/namespaces/${encodeURIComponent(nsId)}/topics/merge`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source_topic: sourceTopic,
+        target_topic: targetTopic,
+        merged_content: options?.mergedContent,
+        agent_id: options?.agentId ?? null,
+      }),
+    },
+  )
+  if (!res.ok) throw new Error('Failed to merge topics')
   return res.json()
 }
 

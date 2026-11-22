@@ -243,9 +243,8 @@ def embedding_config_path() -> Path:
 def search_config_path() -> Path:
     """搜索引擎配置（设置→辅助功能→搜索引擎）。目前存 Tavily API key。
 
-    含密钥，已 gitignore，不入库。柳如烟全局 web_search 与内容模块「联网搜资料」
-    共用——二者都 os.getenv("TAVILY_API_KEY")，所以 UI 配的 key 会在保存/启动时
-    灌进 os.environ。砍除时只删本文件 + search_config.py + 路由注册即可。
+    含密钥，已 gitignore，不入库。供全局 web_search 使用，UI 配的 key 会在保存/
+    启动时灌进 os.environ["TAVILY_API_KEY"]。砍除时删本函数 + search_config.py + 路由注册即可。
     """
     return data_dir() / "search_config.json"
 
@@ -257,15 +256,6 @@ def fast_context_config_path() -> Path:
     含密钥，已 gitignore，不入库。
     """
     return data_dir() / "fast_context_config.json"
-
-
-def wechat_mp_config_path() -> Path:
-    """微信公众号草稿箱集成配置（appid/secret/默认封面）。
-
-    环境变量（WECHAT_APPID 等）未配时的兜底来源。含密钥，已 gitignore，不入库。
-    示例见项目根 wechat_mp.example.json。
-    """
-    return data_dir() / "wechat_mp.json"
 
 
 def computer_use_policy_path() -> Path:

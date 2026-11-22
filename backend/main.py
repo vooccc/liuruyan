@@ -2503,10 +2503,13 @@ async def update_session_project(session_id: str, body: dict):
 
     agent_id = body.get("agent_id") or session.agent_id
     ns_manager = get_memory_manager(agent_id=agent_id).namespace_manager
-    if not ns_manager.get_namespace(raw_ns.strip()):
+    ns_entry = ns_manager.get_namespace(raw_ns.strip())
+    if not ns_entry:
         raise HTTPException(status_code=404, detail=f"项目命名空间不存在: {raw_ns}")
+    if ns_entry.get("status") == "archived":
+        raise HTTPException(status_code=400, detail=f"项目「{ns_entry.get('name', raw_ns)}」已归档，请先恢复后再绑定")
 
-    session.set_project_namespace(raw_ns)
+    session.set_project_namespace(ns_entry["id"])
     return {"session_id": session.id, "project_namespace": session.project_namespace}
 
 
@@ -2752,28 +2755,10 @@ app.include_router(_social_collab_router)
 from backend.routes import workflow_router as _workflow_router
 app.include_router(_workflow_router)
 
-# ----- 发布能力 API：/publish/wechat/draft（内容流水线终稿 → 公众号草稿箱）----
-from backend.routes import publish_router as _publish_router
-app.include_router(_publish_router)
-
 # ----- 量化模块 API：/quant/*（可整体剥离的自包含子系统，子进程调 ai-quant）----
 try:
     from backend.quant import quant_router as _quant_router
     app.include_router(_quant_router)
-except ImportError:
-    pass
-
-# ----- 内容多平台发布 API：/content/*（可整体剥离的自包含子系统）----
-try:
-    from backend.content import content_router as _content_router
-    app.include_router(_content_router)
-except ImportError:
-    pass
-
-# ----- 分步创作工作台 API：/studio/*（可整体剥离的自包含子系统，子进程调 ai-quant studio_json）----
-try:
-    from backend.studio import studio_router as _studio_router
-    app.include_router(_studio_router)
 except ImportError:
     pass
 
@@ -3474,9 +3459,10 @@ async def _finalize_chat_turn(
 
     agent.trigger_refine_for_turn(
         user_message,
-        assistant_payload_json,
+        assistant_text or assistant_payload_json,
         session_id=session.id,
         message_span=current_span,
+        turn_events=assistant_segments,
     )
 
     emotion_updater = get_emotion_updater()

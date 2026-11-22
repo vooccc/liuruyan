@@ -1209,7 +1209,7 @@ function BasicTab({
 // - create + edit 都能用；create 模式下创建拿到 agentId 后由外层调 setActiveModel
 // - edit 模式下顶部“保存”点击 → 外层 handleEditSave 同步写 active_model + persona md
 
-function AgentModelSelector({
+export function AgentModelSelector({
   providers,
   value,
   onChange,
@@ -1226,6 +1226,9 @@ function AgentModelSelector({
   const currentValue = value.model
     ? `${value.provider_id}::${value.model}`
     : ''
+  const isMissingSelection = Boolean(value.model) && !providers.some(
+    p => p.models.some(m => `${p.id}::${m.id}` === currentValue),
+  )
 
   function handleChange(v: string) {
     if (!v) {
@@ -1252,6 +1255,11 @@ function AgentModelSelector({
           onChange={e => handleChange(e.target.value)}
         >
           <option value="">（使用全局默认）</option>
+          {isMissingSelection && (
+            <option value={currentValue}>
+              {value.model}（已禁用或移除，建议改回全局默认）
+            </option>
+          )}
           {providers.map(p => (
             <optgroup key={p.id} label={p.name || p.id}>
               {p.models.map(m => (

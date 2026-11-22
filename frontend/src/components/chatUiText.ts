@@ -32,7 +32,7 @@ export const CHAT_UI_TEXT = {
   defaultAssistantName: '\u52a9\u624b',
   defaultBuiltinModelIcon: '\u2726',
   defaultCustomModelIcon: '\u25cc',
-  defaultModelName: 'GLM-5v-Turbo',
+  defaultModelName: '\u672a\u9009\u62e9\u6a21\u578b',
   inputPlaceholder: '\u7ee7\u7eed\u5728\u4e3b\u804a\u5929\u5de5\u4f5c\u53f0\u8f93\u5165\u6d88\u606f...',
   modeLabel: 'Craft',
   modeSwitchTitle: '\u5207\u6362\u8f93\u5165\u6a21\u5f0f',

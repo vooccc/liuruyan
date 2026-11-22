@@ -20,7 +20,6 @@ from .memory_routes import router as memory_router
 from .models_routes import router as models_router
 from .monitoring_routes import router as monitoring_router
 from .providers_routes import router as providers_router
-from .publish_routes import router as publish_router
 from .runtime_budget_routes import router as runtime_budget_router
 from .fast_context_routes import router as fast_context_router
 from .search_routes import router as search_router
@@ -50,7 +49,6 @@ __all__ = [
     "models_router",
     "monitoring_router",
     "providers_router",
-    "publish_router",
     "runtime_budget_router",
     "fast_context_router",
     "search_router",

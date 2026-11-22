@@ -880,111 +880,119 @@ class LLMClient:
         # （root cause: 工具/runtime context missing: session_id=None, agent_id='default'）。
         # use_tools=False 路径不调工具，self._current_* 跟它们无关；这里只在 use_tools=True
         # 时设状态。
+        _agent_token = None
+        _session_token = None
         if use_tools:
             # ContextVar.set 返回的 token 仅当前 task context 生效，
-            # 不会污染并发的其他 chat() 调用的 context。
-            _current_agent_id_var.set(agent_id)
-            _current_session_id_var.set(session_id)
+            # 退出时通过 finally reset 防止同协程后续请求残留串台。
+            _agent_token = _current_agent_id_var.set(agent_id)
+            _session_token = _current_session_id_var.set(session_id)
 
         max_retries = max(0, int(os.getenv("LLM_RETRY_ON_BUSY_MAX", "2") or 0))
         backoffs = _parse_retry_backoffs(os.getenv("LLM_RETRY_ON_BUSY_BACKOFFS", "1.5,3.0"))
 
         attempt = 0
-        while True:
-            yielded_useful = False
-            retry_requested = False
+        try:
+            while True:
+                yielded_useful = False
+                retry_requested = False
 
-            try:
-                async for event in self._chat_once(
-                    messages,
-                    stream=stream,
-                    use_tools=use_tools,
-                    agent_id=agent_id,
-                    session_id=session_id,
-                    prompt_cache_info=prompt_cache_info,
-                    chain_hook=chain_hook,
-                    allowed_tools_override=allowed_tools_override,
-                ):
-                    etype = event.get("type")
-                    kind = event.get("kind")
+                try:
+                    async for event in self._chat_once(
+                        messages,
+                        stream=stream,
+                        use_tools=use_tools,
+                        agent_id=agent_id,
+                        session_id=session_id,
+                        prompt_cache_info=prompt_cache_info,
+                        chain_hook=chain_hook,
+                        allowed_tools_override=allowed_tools_override,
+                    ):
+                        etype = event.get("type")
+                        kind = event.get("kind")
 
+                        if (
+                            etype == "system_notice"
+                            and kind in _RETRYABLE_BUSY_NOTICE_KINDS
+                            and not yielded_useful
+                            and attempt < max_retries
+                        ):
+                            retry_requested = True
+                            break
+
+                        if etype in ("content", "tool_call", "tool_result", "thinking"):
+                            yielded_useful = True
+                        yield event
+
+                    if not retry_requested:
+                        return
+                except Exception as exc:
                     if (
-                        etype == "system_notice"
-                        and kind in _RETRYABLE_BUSY_NOTICE_KINDS
-                        and not yielded_useful
+                        not yielded_useful
                         and attempt < max_retries
+                        and _is_retryable_upstream_error(exc)
                     ):
                         retry_requested = True
-                        break
+                    else:
+                        # C4-c-2：non-retryable 异常 raise 前调 chain_hook，让 mw 06
+                        # 在 anthropic + OpenAI 任意 provider 的"未被内层归一化的异常"
+                        # 路径上真生效（anthropic 路径异常直接 raise LLMError 不 yield，
+                        # OpenAI 内层 fallback 已在 _chat_with_tools C4-c 调过一次但
+                        # 外层兜底也调一次以覆盖罕见的内层 fallback 抛异常情况）。
+                        # chain_hook 调用异常 swallow + log，不影响原异常 raise 语义。
+                        if chain_hook is not None:
+                            try:
+                                err_type = type(exc).__name__
+                                err_str = str(exc)
+                                kind, friendly = _classify_llm_exception(err_type, err_str)
+                                error_round_done = {
+                                    "type": "_round_done",
+                                    "finish_reason": None,
+                                    "has_tool_calls": False,
+                                    "has_invalid_tool_calls": False,
+                                    "empty_response": False,
+                                    "text_only": False,
+                                    "current_content": "",
+                                    "assistant_msg": None,
+                                    "all_tool_call_ids": [],
+                                    "tool_result_msgs": [],
+                                    "executed_tool_calls": [],
+                                    "executed_tool_results": [],
+                                    "spawn_dispatched": False,
+                                    "invalid_tool_calls": [],
+                                    "llm_error": {
+                                        "kind": kind,
+                                        "friendly": friendly,
+                                        "err_type": err_type,
+                                        "err_str": err_str,
+                                    },
+                                }
+                                await chain_hook(error_round_done)
+                            except Exception:
+                                import traceback
+                                logger.error(
+                                    "[LLMClient] chain_hook (chat outer error path) "
+                                    "failed: %s",
+                                    traceback.format_exc(),
+                                )
+                        raise
 
-                    if etype in ("content", "tool_call", "tool_result", "thinking"):
-                        yielded_useful = True
-                    yield event
-
-                if not retry_requested:
-                    return
-            except Exception as exc:
-                if (
-                    not yielded_useful
-                    and attempt < max_retries
-                    and _is_retryable_upstream_error(exc)
-                ):
-                    retry_requested = True
-                else:
-                    # C4-c-2：non-retryable 异常 raise 前调 chain_hook，让 mw 06
-                    # 在 anthropic + OpenAI 任意 provider 的"未被内层归一化的异常"
-                    # 路径上真生效（anthropic 路径异常直接 raise LLMError 不 yield，
-                    # OpenAI 内层 fallback 已在 _chat_with_tools C4-c 调过一次但
-                    # 外层兜底也调一次以覆盖罕见的内层 fallback 抛异常情况）。
-                    # chain_hook 调用异常 swallow + log，不影响原异常 raise 语义。
-                    if chain_hook is not None:
-                        try:
-                            err_type = type(exc).__name__
-                            err_str = str(exc)
-                            kind, friendly = _classify_llm_exception(err_type, err_str)
-                            error_round_done = {
-                                "type": "_round_done",
-                                "finish_reason": None,
-                                "has_tool_calls": False,
-                                "has_invalid_tool_calls": False,
-                                "empty_response": False,
-                                "text_only": False,
-                                "current_content": "",
-                                "assistant_msg": None,
-                                "all_tool_call_ids": [],
-                                "tool_result_msgs": [],
-                                "executed_tool_calls": [],
-                                "executed_tool_results": [],
-                                "spawn_dispatched": False,
-                                "invalid_tool_calls": [],
-                                "llm_error": {
-                                    "kind": kind,
-                                    "friendly": friendly,
-                                    "err_type": err_type,
-                                    "err_str": err_str,
-                                },
-                            }
-                            await chain_hook(error_round_done)
-                        except Exception:
-                            import traceback
-                            logger.error(
-                                "[LLMClient] chain_hook (chat outer error path) "
-                                "failed: %s",
-                                traceback.format_exc(),
-                            )
-                    raise
-
-            backoff = backoffs[min(attempt, len(backoffs) - 1)]
-            yield {
-                "type": "system_notice",
-                "kind": "llm_upstream_retry",
-                "content": (
-                    f"模型上游繁忙，{backoff:.1f}s 后自动重试"
-                    f"（第 {attempt + 1}/{max_retries} 次）"
-                ),
-            }
-            await asyncio.sleep(backoff)
-            attempt += 1
+                backoff = backoffs[min(attempt, len(backoffs) - 1)]
+                yield {
+                    "type": "system_notice",
+                    "kind": "llm_upstream_retry",
+                    "content": (
+                        f"模型上游繁忙，{backoff:.1f}s 后自动重试"
+                        f"（第 {attempt + 1}/{max_retries} 次）"
+                    ),
+                }
+                await asyncio.sleep(backoff)
+                attempt += 1
+        finally:
+            if _session_token is not None:
+                _current_session_id_var.reset(_session_token)
+            if _agent_token is not None:
+                _current_agent_id_var.reset(_agent_token)
 
     async def _chat_once(
         self,

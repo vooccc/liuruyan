@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+import uuid
 
 
 class BaseMemoryProvider:
@@ -118,7 +119,10 @@ class BaseMemoryProvider:
         return ""
 
     def write_user_profile(self, content: str) -> None:
-        self.user_file.write_text(content, encoding="utf-8")
+        self.user_file.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.user_file.with_name(f".{self.user_file.name}.{uuid.uuid4().hex[:8]}.tmp")
+        tmp.write_text(content, encoding="utf-8")
+        tmp.replace(self.user_file)
 
     def save_conversation_history(self, history: List[Dict[str, str]]) -> None:
         self.conversation_history_file.parent.mkdir(parents=True, exist_ok=True)

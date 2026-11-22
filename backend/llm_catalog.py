@@ -1,16 +1,15 @@
 # -*- coding: utf-8 -*-
 """LLM 模型目录 / 连接解析（平台能力）。
 
-给被柳如烟子进程调用的领域应用（ai-content 自媒体、ai-quant 量化）提供「能直连的模型
-信息」——从柳如烟 providers 配置（models.json）派生，让子进程**直连厂商**、复用柳如烟
-配置、零重配。
+给被柳如烟子进程调用的领域应用（ai-quant 量化等）提供「能直连的模型信息」——
+从柳如烟 providers 配置（models.json）派生，让子进程**直连厂商**、复用柳如烟配置、零重配。
 
 只收 **openai_chat** 协议的模型：子进程侧的薄 llm_client 走 OpenAI 兼容直连，
 anthropic / gemini 原生协议暂不支持直连（不进清单/目录）。
 
 三个出口：
 - ``list_text_models()``：可选模型清单（供前端下拉，含 provider 分组信息）。
-- ``build_model_catalog(selected)``：完整模型目录 {default, models}（ai-content 多模型注入用）。
+- ``build_model_catalog(selected)``：完整模型目录 {default, models}。
 - ``resolve_model_env(selected)``：单模型连接 env（ai-quant 整条工作流一个模型注入用）。
 """
 from __future__ import annotations

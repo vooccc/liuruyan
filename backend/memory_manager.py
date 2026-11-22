@@ -1133,6 +1133,7 @@ class MemoryManager:
         session_ns: Optional[str] = None,
         workspace: Optional[str] = None,
         turn_ns: Optional[str] = None,
+        user_message: Optional[str] = None,
     ) -> str:
         """获取用于聊天的记忆上下文（带预算控制 + 温度排序）
 
@@ -1168,6 +1169,7 @@ class MemoryManager:
                 session_ns=session_ns,
                 workspace=workspace,
                 turn_ns=turn_ns,
+                user_text=user_message or "",
             )
             if estimate_tokens(rendered) > budget_tokens:
                 rendered = truncate_to_tokens(rendered, budget_tokens)
@@ -1248,6 +1250,30 @@ class MemoryManager:
                 "lines": len(content.split('\n')),
                 "tokens": estimate_tokens(content),
             }
+
+        # 检查 v5 命名空间档案（若启用）
+        try:
+            ns_mgr = self.namespace_manager
+            if ns_mgr.is_active():
+                global_text = ns_mgr.read_global()
+                if global_text:
+                    report["files"]["namespaces/GLOBAL.md"] = {
+                        "bytes": len(global_text.encode("utf-8")),
+                        "lines": len(global_text.split("\n")),
+                        "tokens": estimate_tokens(global_text),
+                    }
+                for entry in ns_mgr.list_namespaces():
+                    nid = entry["id"]
+                    card_text = ns_mgr.read_card(nid)
+                    if card_text:
+                        report["files"][f"namespaces/{nid}/FACTS.md"] = {
+                            "bytes": len(card_text.encode("utf-8")),
+                            "lines": len(card_text.split("\n")),
+                            "tokens": estimate_tokens(card_text),
+                        }
+                report["namespaces"] = ns_mgr.stats()
+        except Exception:
+            pass
 
         # 检查对话历史
         history = self.load_conversation_history()

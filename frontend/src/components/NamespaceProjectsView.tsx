@@ -1,50 +1,78 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  FolderKanban, RefreshCw, Save, Plus, Trash2, Globe, History, Archive, Link2,
+  FolderKanban, RefreshCw, Save, Plus, Trash2, Globe,
+  RotateCcw, Sparkles, Archive, ChevronDown, ChevronRight,
 } from 'lucide-react'
 import {
   listNamespaces, getNamespace, updateNamespaceCard,
-  createNamespace, deleteNamespace,
+  createNamespace, deleteNamespace, rebuildNamespaceCard,
+  listArchivedNamespaces, restoreArchivedNamespace,
   getGlobalMemory, updateGlobalMemory,
   listSessionsByAgent, setSessionProject,
-  type ProjectNamespace, type Session,
+  type ProjectNamespace, type Session, type TimelineEntry, type ArchivedNamespaceBackup, type NamespaceTopic,
 } from '../api/chat'
 import { useAlertDialog, useConfirmDialog } from './ConfirmDialog'
+import NamespaceMetaBar from './projects/NamespaceMetaBar'
+import NamespaceSessionLinker from './projects/NamespaceSessionLinker'
+import NamespaceTopicsPanel from './projects/NamespaceTopicsPanel'
+import NamespaceTimelineView from './projects/NamespaceTimelineView'
 
 interface NamespaceProjectsViewProps {
   agentId: string
+  currentSessionId?: string
+  onSessionsChanged?: () => Promise<void> | void
 }
 
 type Selection = { kind: 'global' } | { kind: 'project'; nsId: string } | null
+type StatusFilter = 'active' | 'archived'
+
+const TIMELINE_PAGE_SIZE = 30
 
 /**
- * 项目档案视图（v5 记忆分层 · 2026-10-24）。
- *
- * 左列：全局层 + 项目列表；右列：状态卡（可编辑）/ 全局层（可编辑）。
- * 会话绑定区：v5 的确定性手动入口——常规路径是"会话开头自动识别 + 工作区锚定 +
- * 对话里说一声（set_project_binding 工具）"，这里提供可视化兜底。
- * 后端契约见 backend/namespace_manager.py 与 routes/memory_routes.py。
+ * 项目档案主视图（v5.1 模块化）：
+ * - 对话输入框保持完全无感，此面板承担项目感知、纠偏与管理闭环；
+ * - 左列：全局层 + 活跃/归档项目列表 + 误删备份恢复；
+ * - 右列：当前会话状态条 + 元信息编辑 + 双向会话关联 + 状态卡编辑/重算 + 时间线分页检索。
  */
-export default function NamespaceProjectsView({ agentId }: NamespaceProjectsViewProps) {
+export default function NamespaceProjectsView({
+  agentId,
+  currentSessionId,
+  onSessionsChanged,
+}: NamespaceProjectsViewProps) {
   const [namespaces, setNamespaces] = useState<ProjectNamespace[]>([])
   const [modeActive, setModeActive] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('active')
   const [selection, setSelection] = useState<Selection>(null)
 
+  // 右侧状态卡 / 全局层
   const [detailCard, setDetailCard] = useState('')
   const [editing, setEditing] = useState(false)
   const [editContent, setEditContent] = useState('')
-  const [timeline, setTimeline] = useState<Array<Record<string, unknown>>>([])
-  const [showTimeline, setShowTimeline] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [rebuilding, setRebuilding] = useState(false)
 
+  // 时间线分页与检索 & 树叉列表
+  const [topics, setTopics] = useState<NamespaceTopic[]>([])
+  const [timeline, setTimeline] = useState<TimelineEntry[]>([])
+  const [timelineTotal, setTimelineTotal] = useState(0)
+  const [timelineLoading, setTimelineLoading] = useState(false)
+  const [timelineQuery, setTimelineQuery] = useState('')
+
+  // 新建项目表单
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
+  const [newAliases, setNewAliases] = useState('')
+  const [newWorkspace, setNewWorkspace] = useState('')
 
-  // 会话绑定区
+  // 全量会话（用于当前会话状态条 & 双向关联）
   const [sessions, setSessions] = useState<Session[]>([])
-  const [bindSessionId, setBindSessionId] = useState<string>('')
-  const [binding, setBinding] = useState(false)
+  const [bannerBusy, setBannerBusy] = useState(false)
+
+  // _archived/ 备份恢复区
+  const [archivedBackups, setArchivedBackups] = useState<ArchivedNamespaceBackup[]>([])
+  const [showBackups, setShowBackups] = useState(false)
+  const [restoringFolder, setRestoringFolder] = useState<string | null>(null)
 
   const { alert: alertAction, dialog: alertDialog } = useAlertDialog()
   const { confirm, dialog: confirmDialog } = useConfirmDialog()
@@ -52,53 +80,122 @@ export default function NamespaceProjectsView({ agentId }: NamespaceProjectsView
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
-      const result = await listNamespaces(agentId)
+      const [result, backups] = await Promise.all([
+        listNamespaces(agentId),
+        listArchivedNamespaces(agentId).catch(() => ({ archived: [] })),
+      ])
       setNamespaces(result.namespaces)
       setModeActive(result.active)
+      setArchivedBackups(backups.archived || [])
     } catch {
       setNamespaces([])
+      setArchivedBackups([])
     }
     setLoading(false)
   }, [agentId])
 
   useEffect(() => { void refresh() }, [refresh])
 
-  // 会话列表（绑定区下拉用）：绑定字段随列表回传
   const refreshSessions = useCallback(async () => {
     try {
       const list = await listSessionsByAgent(agentId)
-      setSessions(list.slice(0, 30))
-      setBindSessionId(prev => prev || list[0]?.id || '')
+      setSessions(list)
     } catch {
       setSessions([])
     }
   }, [agentId])
 
-  useEffect(() => { if (modeActive) void refreshSessions() }, [modeActive, refreshSessions])
+  useEffect(() => {
+    if (modeActive) void refreshSessions()
+  }, [modeActive, refreshSessions])
 
-  // 选中态变化时加载右侧内容
+  const notifySessionsChanged = useCallback(async () => {
+    await refreshSessions()
+    if (onSessionsChanged) await onSessionsChanged()
+  }, [refreshSessions, onSessionsChanged])
+
+  const loadProjectDetail = useCallback(
+    async (nsId: string, q: string, offset = 0, append = false) => {
+      setTimelineLoading(true)
+      try {
+        const res = await getNamespace(nsId, agentId, {
+          timelineLimit: TIMELINE_PAGE_SIZE,
+          timelineOffset: offset,
+          q: q.trim() || undefined,
+          newestFirst: true,
+        })
+        if (!append) {
+          setDetailCard(res.card)
+          setEditContent(res.card)
+          setTopics(res.topics || [])
+          setTimeline(res.timeline || [])
+        } else {
+          setTimeline(prev => [...prev, ...(res.timeline || [])])
+        }
+        setTimelineTotal(res.timeline_total ?? (res.timeline || []).length)
+      } catch {
+        if (!append) {
+          setDetailCard('')
+          setTopics([])
+          setTimeline([])
+          setTimelineTotal(0)
+        }
+      }
+      setTimelineLoading(false)
+    },
+    [agentId],
+  )
+
+  // 选中项切换时加载详情
   useEffect(() => {
     setEditing(false)
-    setShowTimeline(false)
-    if (!selection) { setDetailCard(''); setTimeline([]); return }
+    setTimelineQuery('')
+    if (!selection) {
+      setDetailCard('')
+      setTopics([])
+      setTimeline([])
+      setTimelineTotal(0)
+      return
+    }
     if (selection.kind === 'global') {
+      setTopics([])
       getGlobalMemory(agentId)
         .then(r => { setDetailCard(r.content); setEditContent(r.content) })
         .catch(() => setDetailCard(''))
       return
     }
-    getNamespace(selection.nsId, agentId)
-      .then(r => {
-        setDetailCard(r.card)
-        setEditContent(r.card)
-        setTimeline(r.timeline || [])
-      })
-      .catch(() => { setDetailCard(''); setTimeline([]) })
-  }, [selection, agentId])
+    void loadProjectDetail(selection.nsId, '', 0, false)
+  }, [selection, agentId, loadProjectDetail])
 
-  const selectedProject = selection?.kind === 'project'
-    ? namespaces.find(ns => ns.id === selection.nsId)
-    : undefined
+  // 时间线搜索变化时重新加载第一页
+  const selectedProjectId = selection?.kind === 'project' ? selection.nsId : null
+  useEffect(() => {
+    if (!selectedProjectId) return
+    const timer = setTimeout(() => {
+      void loadProjectDetail(selectedProjectId, timelineQuery, 0, false)
+    }, 200)
+    return () => clearTimeout(timer)
+  }, [selectedProjectId, timelineQuery, loadProjectDetail])
+
+  const selectedProject = useMemo(
+    () => (selectedProjectId ? namespaces.find(ns => ns.id === selectedProjectId) : undefined),
+    [namespaces, selectedProjectId],
+  )
+
+  const activeProjects = useMemo(
+    () => namespaces.filter(ns => ns.status !== 'archived'),
+    [namespaces],
+  )
+  const archivedProjects = useMemo(
+    () => namespaces.filter(ns => ns.status === 'archived'),
+    [namespaces],
+  )
+  const visibleProjects = statusFilter === 'active' ? activeProjects : archivedProjects
+
+  const currentSession = useMemo(
+    () => (currentSessionId ? sessions.find(s => s.id === currentSessionId) : undefined),
+    [sessions, currentSessionId],
+  )
 
   async function saveCard() {
     if (!selection) return
@@ -107,24 +204,65 @@ export default function NamespaceProjectsView({ agentId }: NamespaceProjectsView
       if (selection.kind === 'global') {
         await updateGlobalMemory(editContent, agentId)
       } else {
-        await updateNamespaceCard(selection.nsId, editContent, agentId)
+        const res = await updateNamespaceCard(selection.nsId, editContent, agentId)
+        if (res.namespace) {
+          setNamespaces(prev => prev.map(n => (n.id === res.namespace!.id ? res.namespace! : n)))
+        }
       }
       setDetailCard(editContent)
       setEditing(false)
-    } catch { await alertAction('保存失败') }
+    } catch {
+      await alertAction('保存失败')
+    }
     setSaving(false)
+  }
+
+  async function handleRebuildCard() {
+    if (!selectedProject) return
+    const ok = await confirm(
+      `从时间线重算「${selectedProject.name}」状态卡？`,
+      '将依据 timeline.jsonl 中的全部历史事实重新整理当前状态卡，并保留现有「红线与禁忌」章节。',
+    )
+    if (!ok) return
+    setRebuilding(true)
+    try {
+      const res = await rebuildNamespaceCard(selectedProject.id, { agentId, useLlm: true })
+      setDetailCard(res.card)
+      setEditContent(res.card)
+      setEditing(false)
+      if (res.namespace) {
+        setNamespaces(prev => prev.map(n => (n.id === res.namespace!.id ? res.namespace! : n)))
+      }
+    } catch (e) {
+      await alertAction(`重算失败: ${(e as Error).message || e}`)
+    }
+    setRebuilding(false)
   }
 
   async function handleCreate() {
     const name = newName.trim()
     if (!name) return
+    const aliases = newAliases
+      .split(/[,，、\s]+/)
+      .map(s => s.trim())
+      .filter(Boolean)
     setSaving(true)
     try {
-      await createNamespace(name, { agentId })
+      const res = await createNamespace(name, {
+        agentId,
+        aliases,
+        workspacePath: newWorkspace.trim() || undefined,
+      })
       setNewName('')
+      setNewAliases('')
+      setNewWorkspace('')
       setCreating(false)
+      setStatusFilter('active')
       await refresh()
       setModeActive(true)
+      if (res.namespace?.id) {
+        setSelection({ kind: 'project', nsId: res.namespace.id })
+      }
     } catch (e) {
       await alertAction(`创建失败: ${(e as Error).message || e}`)
     }
@@ -134,7 +272,7 @@ export default function NamespaceProjectsView({ agentId }: NamespaceProjectsView
   async function handleDelete(ns: ProjectNamespace) {
     const confirmed = await confirm(
       `注销项目「${ns.name}」？`,
-      '状态卡与 timeline 会归档到 _archived/ 目录，可手工恢复；会话绑定不会自动解除。',
+      '状态卡与 timeline 会移入 _archived/ 目录留底（可在左下角恢复）；如果只是暂时不用，建议点右上角「归档」。',
     )
     if (!confirmed) return
     try {
@@ -146,20 +284,40 @@ export default function NamespaceProjectsView({ agentId }: NamespaceProjectsView
     }
   }
 
-  async function handleBind(nsId: string | null) {
-    if (!bindSessionId) return
-    setBinding(true)
+  async function handleRestoreBackup(folderName: string) {
+    setRestoringFolder(folderName)
     try {
-      await setSessionProject(bindSessionId, nsId, agentId)
-      await refreshSessions()
+      const res = await restoreArchivedNamespace(folderName, agentId)
+      await refresh()
+      setStatusFilter('active')
+      if (res.namespace?.id) {
+        setSelection({ kind: 'project', nsId: res.namespace.id })
+      }
     } catch (e) {
-      await alertAction(`绑定失败: ${(e as Error).message || e}`)
+      await alertAction(`恢复失败: ${(e as Error).message || e}`)
     }
-    setBinding(false)
+    setRestoringFolder(null)
   }
 
-  function renderTimelineEvent(entry: Record<string, unknown>): string {
-    return String(entry.event ?? '（无标题）')
+  async function handleCurrentBannerBind(targetNs: string | null) {
+    if (!currentSession) return
+    setBannerBusy(true)
+    try {
+      await setSessionProject(currentSession.id, targetNs, agentId)
+      await notifySessionsChanged()
+    } catch (e) {
+      await alertAction(`切换当前会话项目失败: ${(e as Error).message || e}`)
+    }
+    setBannerBusy(false)
+  }
+
+  function handleMetaUpdated(updated: ProjectNamespace) {
+    setNamespaces(prev => prev.map(n => (n.id === updated.id ? updated : n)))
+    if (updated.status === 'archived' && statusFilter === 'active') {
+      setStatusFilter('archived')
+    } else if (updated.status !== 'archived' && statusFilter === 'archived') {
+      setStatusFilter('active')
+    }
   }
 
   return (
@@ -172,11 +330,33 @@ export default function NamespaceProjectsView({ agentId }: NamespaceProjectsView
             <button className="text-btn" onClick={() => void refresh()} title="刷新" disabled={loading}>
               <RefreshCw size={12} style={{ display: 'inline', marginRight: 3 }} />
             </button>
-            <button className="text-btn" onClick={() => { setCreating(v => !v); setNewName('') }} title="新建项目">
+            <button
+              className="text-btn"
+              onClick={() => { setCreating(v => !v); setNewName(''); setNewAliases(''); setNewWorkspace('') }}
+              title="新建项目"
+            >
               <Plus size={12} style={{ display: 'inline', marginRight: 3 }} />
             </button>
           </div>
         </div>
+
+        {/* 活跃 / 已归档过滤 */}
+        {namespaces.length > 0 && (
+          <div className="ns-filter-tabs">
+            <button
+              className={`ns-filter-tab ${statusFilter === 'active' ? 'active' : ''}`}
+              onClick={() => setStatusFilter('active')}
+            >
+              活跃 ({activeProjects.length})
+            </button>
+            <button
+              className={`ns-filter-tab ${statusFilter === 'archived' ? 'active' : ''}`}
+              onClick={() => setStatusFilter('archived')}
+            >
+              已归档 ({archivedProjects.length})
+            </button>
+          </div>
+        )}
 
         {!modeActive && namespaces.length === 0 && (
           <p className="hint" style={{ padding: '0 6px' }}>
@@ -187,7 +367,7 @@ export default function NamespaceProjectsView({ agentId }: NamespaceProjectsView
         )}
 
         {creating && (
-          <div style={{ padding: '4px 6px 8px', display: 'flex', gap: 4 }}>
+          <div className="ns-create-form">
             <input
               className="namespace-new-input"
               value={newName}
@@ -195,208 +375,250 @@ export default function NamespaceProjectsView({ agentId }: NamespaceProjectsView
               onChange={e => setNewName(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') void handleCreate() }}
               autoFocus
-              style={{ flex: 1 }}
             />
-            <button className="icon-btn-sm success" onClick={() => void handleCreate()} disabled={saving || !newName.trim()}>
-              <Save size={13} />
-            </button>
+            <input
+              className="namespace-new-input"
+              value={newAliases}
+              placeholder="口语别名（逗号分隔，如：中微, 回购案）"
+              onChange={e => setNewAliases(e.target.value)}
+            />
+            <input
+              className="namespace-new-input"
+              value={newWorkspace}
+              placeholder="关联工作区目录（可选，如 ."
+              onChange={e => setNewWorkspace(e.target.value)}
+            />
+            <div className="ns-create-actions">
+              <button className="icon-btn-sm" onClick={() => setCreating(false)}>取消</button>
+              <button
+                className="icon-btn-sm success"
+                onClick={() => void handleCreate()}
+                disabled={saving || !newName.trim()}
+              >
+                创建
+              </button>
+            </div>
           </div>
         )}
 
+        {/* 全局层入口 */}
         <button
           className={`diary-item ${selection?.kind === 'global' ? 'active' : ''}`}
           onClick={() => setSelection({ kind: 'global' })}
-          title="关系里程碑与跨项目认知（每轮常驻注入，不分项目）"
+          title="关系记忆、跨项目习惯（常驻注入）"
         >
           <Globe size={14} className="chevron" />
-          <div className="session-item-meta" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, overflow: 'hidden' }}>
-            <span style={{ fontSize: 13 }}>全局 · 关系层</span>
-            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>常驻注入</span>
-          </div>
+          <span>全局记忆（关系层）</span>
         </button>
 
-        {namespaces.map(ns => (
-          <button
-            key={ns.id}
-            className={`diary-item ${selection?.kind === 'project' && selection.nsId === ns.id ? 'active' : ''}`}
-            onClick={() => setSelection({ kind: 'project', nsId: ns.id })}
-            title={ns.summary || ns.name}
-          >
-            {ns.status === 'archived'
-              ? <Archive size={14} className="chevron" />
-              : <FolderKanban size={14} className="chevron" />}
-            <div className="session-item-meta" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, overflow: 'hidden' }}>
-              <span style={{ fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>
-                {ns.name}
-              </span>
-              {ns.summary && (
-                <span style={{ fontSize: 11, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>
-                  {ns.summary}
-                </span>
-              )}
-            </div>
-          </button>
+        {/* 项目条目 */}
+        {visibleProjects.map(ns => (
+          <div key={ns.id} className="diary-item-wrapper">
+            <button
+              className={`diary-item ${selection?.kind === 'project' && selection.nsId === ns.id ? 'active' : ''}`}
+              onClick={() => setSelection({ kind: 'project', nsId: ns.id })}
+              title={ns.summary || ns.name}
+            >
+              <FolderKanban size={14} className="chevron" />
+              <div className="ns-list-item-row">
+                <span className="ns-list-item-name">{ns.name}</span>
+                {ns.aliases?.length > 0 && (
+                  <span className="ns-list-item-meta">{ns.aliases.slice(0, 2).join(' · ')}</span>
+                )}
+              </div>
+            </button>
+            <button
+              className="diary-delete-btn"
+              onClick={() => void handleDelete(ns)}
+              title={`注销项目「${ns.name}」`}
+            >
+              <Trash2 size={12} />
+            </button>
+          </div>
         ))}
-        {namespaces.length === 0 && !loading && (
-          <p className="empty-hint" style={{ paddingLeft: 6 }}>暂无项目</p>
+
+        {visibleProjects.length === 0 && modeActive && (
+          <p className="empty-hint">
+            {statusFilter === 'active' ? '暂无活跃项目' : '暂无已归档项目'}
+          </p>
+        )}
+
+        {/* _archived/ 误删备份恢复 */}
+        {archivedBackups.length > 0 && (
+          <div className="ns-archived-box">
+            <button
+              className="ns-archived-toggle"
+              onClick={() => setShowBackups(v => !v)}
+            >
+              {showBackups ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              <Archive size={12} />
+              <span>已注销留底 ({archivedBackups.length})</span>
+            </button>
+            {showBackups && (
+              <div className="ns-archived-list">
+                {archivedBackups.map(b => (
+                  <div key={b.folder_name} className="ns-archived-row">
+                    <div className="ns-archived-info">
+                      <span className="ns-archived-name" title={b.name}>{b.name}</span>
+                      <span className="ns-archived-sub">
+                        {b.timeline_count} 条时间线{b.archived_at ? ` · ${b.archived_at}` : ''}
+                      </span>
+                    </div>
+                    <button
+                      className="icon-btn-sm"
+                      disabled={restoringFolder === b.folder_name}
+                      onClick={() => void handleRestoreBackup(b.folder_name)}
+                      title="恢复此项目"
+                    >
+                      <RotateCcw size={11} /> 恢复
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         )}
       </div>
 
-      {/* 右列：详情 */}
+      {/* 右列：当前会话感知条 + 详情 */}
       <div className="diary-detail">
-        {!selection ? (
-          <div className="empty-state">
-            <FolderKanban size={32} />
-            <p>选择一个项目查看状态卡</p>
-            <p className="hint">绑定会话后，该会话只加载此项目的记忆（输入框工具栏可选）</p>
+        {modeActive && currentSession && (
+          <div className="ns-current-banner">
+            <div className="ns-current-banner-left">
+              <Sparkles size={13} className="ns-current-icon" />
+              <span className="ns-current-badge">当前会话</span>
+              <span className="ns-current-title" title={currentSession.title || currentSession.id}>
+                {currentSession.title || '无标题会话'}
+              </span>
+            </div>
+            <select
+              className="ns-current-banner-select"
+              value={currentSession.project_namespace || ''}
+              disabled={bannerBusy}
+              onChange={e => void handleCurrentBannerBind(e.target.value || null)}
+              title="切换当前对话会话的项目归属"
+            >
+              <option value="">未绑定（自动识别中）</option>
+              {activeProjects.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
           </div>
-        ) : (
-          <div className="memory-section" style={{ padding: '0 0 0 10px', height: '100%', overflow: 'auto' }}>
+        )}
+
+        {selection ? (
+          <>
+            {/* 项目元信息编辑栏（仅项目态） */}
+            {selectedProject && (
+              <NamespaceMetaBar
+                project={selectedProject}
+                agentId={agentId}
+                onUpdated={handleMetaUpdated}
+                onError={msg => void alertAction(msg)}
+              />
+            )}
+
+            {/* 双向会话关联区（仅项目态） */}
+            {selectedProject && (
+              <NamespaceSessionLinker
+                project={selectedProject}
+                allProjects={namespaces}
+                sessions={sessions}
+                agentId={agentId}
+                currentSessionId={currentSessionId}
+                onChanged={notifySessionsChanged}
+                onError={msg => void alertAction(msg)}
+              />
+            )}
+
+            {/* 状态卡 / 全局层工具栏 */}
             <div className="section-toolbar">
               <h3>
-                {selection.kind === 'global' ? (
-                  <><Globe size={15} style={{ display: 'inline', verticalAlign: '-2px', marginRight: 6 }} />全局 · 关系层</>
-                ) : (
-                  <><FolderKanban size={15} style={{ display: 'inline', verticalAlign: '-2px', marginRight: 6 }} />{selectedProject?.name ?? selection.nsId}</>
-                )}
+                {selection.kind === 'global'
+                  ? '全局记忆（关系与跨项目习惯）'
+                  : '当前状态卡（FACTS.md）'}
               </h3>
               <div className="edit-actions" style={{ gap: 6 }}>
-                {selection.kind === 'project' && (
-                  <div style={{ display: 'inline-flex', alignItems: 'center', background: 'var(--bg-tertiary, rgba(255,255,255,0.06))', borderRadius: 6, padding: 2, marginRight: 4 }}>
-                    <button
-                      className="text-btn"
-                      style={{
-                        padding: '3px 8px',
-                        fontSize: 12,
-                        borderRadius: 4,
-                        background: !showTimeline ? 'var(--primary, #3b82f6)' : 'transparent',
-                        color: !showTimeline ? '#fff' : 'var(--text-muted, #94a3b8)',
-                        fontWeight: !showTimeline ? 600 : 400,
-                        boxShadow: !showTimeline ? '0 1px 3px rgba(0,0,0,0.2)' : 'none',
-                      }}
-                      onClick={() => setShowTimeline(false)}
-                      title="查看/编辑当前项目状态卡 (FACTS.md)"
-                    >
-                      <FolderKanban size={12} style={{ display: 'inline', marginRight: 4, verticalAlign: '-1px' }} />
-                      状态卡
-                    </button>
-                    <button
-                      className="text-btn"
-                      style={{
-                        padding: '3px 8px',
-                        fontSize: 12,
-                        borderRadius: 4,
-                        background: showTimeline ? 'var(--primary, #3b82f6)' : 'transparent',
-                        color: showTimeline ? '#fff' : 'var(--text-muted, #94a3b8)',
-                        fontWeight: showTimeline ? 600 : 400,
-                        boxShadow: showTimeline ? '0 1px 3px rgba(0,0,0,0.2)' : 'none',
-                      }}
-                      onClick={() => setShowTimeline(true)}
-                      title="查看 append-only 历史时间线 (timeline.jsonl)"
-                    >
-                      <History size={12} style={{ display: 'inline', marginRight: 4, verticalAlign: '-1px' }} />
-                      溯源 {timeline.length}
-                    </button>
-                  </div>
+                {selection.kind === 'project' && !editing && (
+                  <button
+                    className="text-btn"
+                    onClick={() => void handleRebuildCard()}
+                    disabled={rebuilding}
+                    title="从 timeline.jsonl 全量事实重新整理状态卡"
+                  >
+                    <RotateCcw size={12} style={{ display: 'inline', marginRight: 3 }} />
+                    {rebuilding ? '重算中...' : '从时间线重算'}
+                  </button>
                 )}
                 {!editing ? (
-                  <button className="text-btn" onClick={() => { setEditContent(detailCard); setEditing(true) }}>编辑</button>
+                  <button className="text-btn" onClick={() => setEditing(true)}>编辑</button>
                 ) : (
                   <>
                     <button className="icon-btn-sm success" onClick={() => void saveCard()} disabled={saving}>
                       <Save size={14} /> {saving ? '...' : '保存'}
                     </button>
-                    <button className="icon-btn-sm" onClick={() => setEditing(false)}>取消</button>
+                    <button className="icon-btn-sm" onClick={() => { setEditing(false); setEditContent(detailCard) }}>
+                      取消
+                    </button>
                   </>
-                )}
-                {selection.kind === 'project' && selectedProject && (
-                  <button
-                    className="icon-btn-sm danger"
-                    onClick={() => void handleDelete(selectedProject)}
-                    title="注销此项目（数据归档）"
-                  >
-                    <Trash2 size={12} />
-                  </button>
                 )}
               </div>
             </div>
 
-            {selection.kind === 'project' && selectedProject?.workspace_path && (
-              <p className="hint" style={{ marginTop: 0 }}>
-                工作区锚定：{selectedProject.workspace_path}（该目录下的会话自动绑定本项目）
-              </p>
-            )}
-
-            {modeActive && selection?.kind === 'project' && (
-              <div className="namespace-bind-box">
-                <span className="namespace-bind-label">
-                  <Link2 size={12} style={{ display: 'inline', verticalAlign: '-2px', marginRight: 4 }} />
-                  会话绑定（兜底修正；常规为自动识别）
-                </span>
-                <select
-                  className="namespace-new-input"
-                  value={bindSessionId}
-                  onChange={e => setBindSessionId(e.target.value)}
-                >
-                  {sessions.map(s => (
-                    <option key={s.id} value={s.id}>
-                      {s.title || '无标题'}{s.project_namespace ? ` · 已绑:${s.project_namespace}` : ' · 未绑定'}
-                    </option>
-                  ))}
-                </select>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button
-                    className="icon-btn-sm success"
-                    disabled={binding || !bindSessionId}
-                    onClick={() => void handleBind(selection.nsId)}
-                    title="把所选会话绑定到当前项目"
-                  >
-                    <Save size={13} /> 绑定
-                  </button>
-                  <button
-                    className="icon-btn-sm"
-                    disabled={binding || !bindSessionId}
-                    onClick={() => void handleBind(null)}
-                    title="解绑所选会话"
-                  >
-                    解绑
-                  </button>
+            {!editing ? (
+              detailCard ? (
+                <pre className="memory-text">{detailCard}</pre>
+              ) : (
+                <div className="empty-state">
+                  <FolderKanban size={32} />
+                  <p>{selection.kind === 'global' ? '全局记忆为空' : '状态卡尚未沉淀内容'}</p>
+                  <p className="hint">随着对话推进，提炼器会自动合并最新状态；也可以点击右上角手动编辑</p>
                 </div>
-              </div>
-            )}
-
-            {showTimeline && selection.kind === 'project' ? (
-              <div className="reflections-list">
-                {[...timeline].reverse().map((entry, idx) => (
-                  <div key={idx} className="reflection-item-card">
-                    <div className="reflection-item-header">
-                      <span className="reflection-item-title">{renderTimelineEvent(entry)}</span>
-                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{String(entry.ts ?? '')}</span>
-                    </div>
-                    {entry.decision ? <pre className="reflection-item-body">{String(entry.decision)}</pre> : null}
-                  </div>
-                ))}
-              </div>
-            ) : editing ? (
+              )
+            ) : (
               <textarea
                 className="memory-editor"
                 value={editContent}
                 onChange={e => setEditContent(e.target.value)}
-                rows={16}
-                autoFocus
+                rows={14}
               />
-            ) : detailCard ? (
-              <pre className="memory-text">{detailCard}</pre>
-            ) : (
-              <div className="empty-state">
-                <FolderKanban size={32} />
-                <p>{selection.kind === 'global' ? '暂无全局记忆' : '暂无状态卡内容'}</p>
-              </div>
             )}
+
+            {/* 专题树叉（仅项目态） */}
+            {selection.kind === 'project' && selectedProjectId && (
+              <NamespaceTopicsPanel
+                nsId={selectedProjectId}
+                agentId={agentId}
+                topics={topics}
+                onTopicsChanged={setTopics}
+                onError={msg => void alertAction(msg)}
+              />
+            )}
+
+            {/* 时间线溯源（仅项目态） */}
+            {selection.kind === 'project' && (
+              <NamespaceTimelineView
+                entries={timeline}
+                total={timelineTotal}
+                loading={timelineLoading}
+                searchQuery={timelineQuery}
+                onSearchChange={setTimelineQuery}
+                onLoadMore={() => {
+                  if (selectedProjectId) {
+                    void loadProjectDetail(selectedProjectId, timelineQuery, timeline.length, true)
+                  }
+                }}
+              />
+            )}
+          </>
+        ) : (
+          <div className="empty-state">
+            <FolderKanban size={32} />
+            <p>选择一个项目查看或编辑状态卡</p>
+            <p className="hint">对话输入框保持无感自动识别；可在此查看、纠偏或管理项目档案</p>
           </div>
         )}
       </div>
-
       {confirmDialog}
       {alertDialog}
     </div>

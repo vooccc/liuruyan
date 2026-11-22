@@ -256,10 +256,20 @@ async def set_active_model(body: ActiveModelPutRequest):
         if pc is None:
             try:
                 from backend.compute_accounts.models_provider import is_pro_provider, get_pro_providers
+                pro_providers = get_pro_providers()
                 if is_pro_provider(body.provider_id):
-                    is_pro = True
+                    pid_l = (body.provider_id or "").lower()
+                    for vp in pro_providers:
+                        vp_id = vp.get("id") or ""
+                        if (
+                            (vp_id.lower() == pid_l or (pid_l == "google" and vp_id == "google-antigravity"))
+                            and any(m["id"] == body.model for m in vp.get("models", []))
+                        ):
+                            is_pro = True
+                            effective_pid = body.provider_id or vp_id
+                            break
                 else:
-                    for vp in get_pro_providers():
+                    for vp in pro_providers:
                         if any(m["id"] == body.model for m in vp.get("models", [])):
                             is_pro = True
                             effective_pid = vp.get("id", "google-antigravity")
@@ -309,10 +319,20 @@ async def set_active_model(body: ActiveModelPutRequest):
         if pc is None:
             try:
                 from backend.compute_accounts.models_provider import is_pro_provider, get_pro_providers
+                pro_providers = get_pro_providers()
                 if is_pro_provider(body.provider_id):
-                    is_pro = True
+                    pid_l = (body.provider_id or "").lower()
+                    for vp in pro_providers:
+                        vp_id = vp.get("id") or ""
+                        if (
+                            (vp_id.lower() == pid_l or (pid_l == "google" and vp_id == "google-antigravity"))
+                            and any(m["id"] == body.model for m in vp.get("models", []))
+                        ):
+                            is_pro = True
+                            effective_pid = body.provider_id or vp_id
+                            break
                 else:
-                    for vp in get_pro_providers():
+                    for vp in pro_providers:
                         if any(m["id"] == body.model for m in vp.get("models", [])):
                             is_pro = True
                             effective_pid = vp.get("id", "google-antigravity")

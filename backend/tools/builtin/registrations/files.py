@@ -28,7 +28,10 @@ def register(registry):
         _handle_create_memory,
         _handle_recall_memory,
     )
-    from ..project_binding_tool import _handle_set_project_binding
+    from ..project_binding_tool import (
+        _handle_project_archive,
+        _handle_set_project_binding,
+    )
     from backend.lry_workspace_tools import (
         _handle_add_project_rule,
         _handle_update_project_notes,
@@ -1253,6 +1256,78 @@ def register(registry):
         },
         handler=_handle_grep,
         arg_aliases={**_PATH_ALIAS_MAP, **_PATTERN_ALIAS_MAP},
+    )
+
+    registry.register(
+        name="project_archive",
+        description=(
+            "Read or safely update a project's archive (FACTS.md root card, topics/*.md sub-branches, "
+            "timeline.jsonl, or REGISTRY.json metadata) through NamespaceManager locks.\n\n"
+            "ACTIONS:\n"
+            "- list: list active projects and current session binding\n"
+            "- create: register a new project (with optional aliases / workspace_path)\n"
+            "- read: read project FACTS.md, topics catalog, and recent timeline\n"
+            "- list_topics / read_topic / update_topic / delete_topic / merge_topics: manage topic sub-branches\n"
+            "- append_timeline: append a key milestone/decision/cognition to timeline.jsonl\n"
+            "- update_card: replace FACTS.md (`card_content`) or append a line (`append_line`) and sync summary\n"
+            "- update_meta: update aliases, workspace_path, or summary\n\n"
+            "Prefer this over raw write_file/edit on namespaces/ files to avoid concurrent overwrite with background refiner."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": [
+                        "list",
+                        "create",
+                        "read",
+                        "list_topics",
+                        "read_topic",
+                        "update_topic",
+                        "delete_topic",
+                        "merge_topics",
+                        "append_timeline",
+                        "update_card",
+                        "update_meta",
+                    ],
+                    "description": "Operation to perform on project archive.",
+                },
+                "project": {
+                    "type": "string",
+                    "description": "Target project id, name, or alias. Defaults to current session's bound project.",
+                },
+                "topic": {
+                    "type": "string",
+                    "description": "Topic sub-branch name (for read_topic/update_topic/delete_topic/merge_topics/append_timeline).",
+                },
+                "topic_content": {
+                    "type": "string",
+                    "description": "Full markdown content when updating or merging a topic sub-branch.",
+                },
+                "target_topic": {
+                    "type": "string",
+                    "description": "Target topic name when merging/renaming with merge_topics.",
+                },
+                "event": {"type": "string", "description": "For append_timeline: one-line event summary."},
+                "decision": {"type": "string", "description": "For append_timeline: decision made."},
+                "cognition": {"type": "string", "description": "For append_timeline: new insight/cognition."},
+                "detail": {"type": "string", "description": "For append_timeline: optional detailed context."},
+                "tags": {"type": "array", "items": {"type": "string"}, "description": "For append_timeline: tags."},
+                "temperature": {
+                    "type": "string",
+                    "enum": ["burning", "warm", "cold"],
+                    "default": "warm",
+                },
+                "card_content": {"type": "string", "description": "For update_card: full updated FACTS.md markdown."},
+                "append_line": {"type": "string", "description": "For update_card/update_topic: single line to append."},
+                "aliases": {"type": "array", "items": {"type": "string"}, "description": "For create/update_meta: project aliases."},
+                "workspace_path": {"type": "string", "description": "For create/update_meta: anchored local workspace path."},
+                "summary": {"type": "string", "description": "For update_meta: concise one-line project summary."},
+            },
+            "required": ["action"],
+        },
+        handler=_handle_project_archive,
     )
 
     # 语音转写工具（voice_transcription 孤立包）：删除 backend/voice_transcription/ 时自动静默跳过

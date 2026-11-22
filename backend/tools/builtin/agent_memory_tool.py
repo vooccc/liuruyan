@@ -312,6 +312,21 @@ def save_memory_tool(
 # recall_memory
 # ============================================================================
 
+def _expand_cjk_bigrams(tokens: List[str]) -> List[str]:
+    """为无空格中文长词补充 2-gram 子串，提升命名空间/长句召回率。"""
+    bigrams: List[str] = []
+    seen = set(tokens)
+    for tok in tokens:
+        # 提取连续中文段
+        for seg in re.findall(r"[\u4e00-\u9fff]{3,}", tok):
+            for i in range(len(seg) - 1):
+                bg = seg[i : i + 2]
+                if bg not in seen:
+                    seen.add(bg)
+                    bigrams.append(bg)
+    return bigrams
+
+
 def _score(rec: Dict[str, Any], query_tokens: List[str], required_tags: List[str]) -> int:
     """简单子串/标签打分。0 = 不匹配，>0 越大越相关。
 
@@ -320,18 +335,25 @@ def _score(rec: Dict[str, Any], query_tokens: List[str], required_tags: List[str
     """
     content_lc = rec.get("content", "").lower()
     rec_tags = set(rec.get("tags", []) or [])
+    rec_tags_lc = {str(t).lower() for t in rec_tags}
     score = 0
     # 必备 tag 全命中才算上场
     for t in required_tags:
-        if t not in rec_tags:
+        if t not in rec_tags and t not in rec_tags_lc:
             return 0
         score += 5
     # query token 子串命中
     for tok in query_tokens:
         if tok in content_lc:
             score += 3
-        if tok in rec_tags:
+        if tok in rec_tags or tok in rec_tags_lc:
             score += 4
+    # 中文长查询无空格时，补充 2-gram 命中（权重低于完整词，避免压过精确命中）
+    for bg in _expand_cjk_bigrams(query_tokens):
+        if bg in content_lc:
+            score += 1
+        if bg in rec_tags_lc:
+            score += 2
     return score
 
 
@@ -357,13 +379,18 @@ def _load_namespace_records(agent_id: Optional[str]) -> List[Dict[str, Any]]:
     except Exception:
         return []
 
-    def _ts_from_date(value: Any) -> int:
+    def _ts_from_date(value: Any, fallback: int = 0) -> int:
         try:
             from datetime import datetime
 
-            return int(datetime.fromisoformat(str(value)[:10]).timestamp())
+            return int(datetime.fromisoformat(str(value)[:19]).timestamp())
         except Exception:
-            return 0
+            try:
+                from datetime import datetime
+
+                return int(datetime.fromisoformat(str(value)[:10]).timestamp())
+            except Exception:
+                return fallback
 
     records: List[Dict[str, Any]] = []
 
@@ -394,13 +421,29 @@ def _load_namespace_records(agent_id: Optional[str]) -> List[Dict[str, Any]]:
                 "id": f"ns_card_{ns_id}",
                 "content": card,
                 "tags": tags,
-                "ts": int(time.time()),
+                "ts": _ts_from_date(entry.get("updated_at"), fallback=int(time.time())),
                 "temp": _TEMP_WARM,
                 "source": "namespace_card",
+                "namespace_id": ns_id,
+            })
+        for t in ns.list_topics(ns_id):
+            t_name = t.get("name") or ""
+            t_body = ns.read_topic(ns_id, t_name).strip()
+            if not t_body:
+                continue
+            records.append({
+                "id": f"ns_topic_{ns_id}_{t_name}",
+                "content": f"[{t_name}]\n{t_body}",
+                "tags": tags + [t_name],
+                "ts": _ts_from_date(t.get("updated_at"), fallback=_ts_from_date(entry.get("updated_at"))),
+                "temp": _TEMP_WARM,
+                "source": "namespace_topic",
+                "namespace_id": ns_id,
+                "topic": t_name,
             })
         for j, tl in enumerate(ns.read_timeline(ns_id, limit=200)):
             content = "。".join(
-                str(tl.get(k, "")) for k in ("event", "decision", "cognition") if tl.get(k)
+                str(tl.get(k, "")) for k in ("event", "decision", "cognition", "detail") if tl.get(k)
             )
             if not content:
                 continue
@@ -411,6 +454,7 @@ def _load_namespace_records(agent_id: Optional[str]) -> List[Dict[str, Any]]:
                 "ts": _ts_from_date(tl.get("ts")),
                 "temp": _TEMP_COLD,
                 "source": "namespace_timeline",
+                "namespace_id": ns_id,
             })
 
     return records

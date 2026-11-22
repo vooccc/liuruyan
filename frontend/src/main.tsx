@@ -39,7 +39,7 @@ void registerPWA()
 // This is purely additive — main App is untouched.
 const EventBusDemo = lazy(() => import('./components/_dev/EventBusDemo'))
 
-function StandaloneMemoryBrowser({ agentId, onClose }: { agentId?: string; onClose: () => void }) {
+function StandaloneMemoryBrowser({ agentId, sessionId, onClose }: { agentId?: string; sessionId?: string; onClose: () => void }) {
   const [agents, setAgents] = useState<Agent[]>([])
 
   useEffect(() => {
@@ -54,7 +54,7 @@ function StandaloneMemoryBrowser({ agentId, onClose }: { agentId?: string; onClo
     return () => { cancelled = true }
   }, [])
 
-  return <MemoryPanel onClose={onClose} agentId={agentId} agents={agents} standalone />
+  return <MemoryPanel onClose={onClose} agentId={agentId} agents={agents} currentSessionId={sessionId} standalone />
 }
 
 function Root() {
@@ -100,7 +100,8 @@ function Root() {
     applyTheme(getStoredTheme())
     const params = new URLSearchParams(hash.split('?')[1] || '')
     const agentId = params.get('agentId') || undefined
-    return <StandaloneMemoryBrowser agentId={agentId} onClose={() => { void closeStandaloneWindow() }} />
+    const sessionId = params.get('sessionId') || undefined
+    return <StandaloneMemoryBrowser agentId={agentId} sessionId={sessionId} onClose={() => { void closeStandaloneWindow() }} />
   }
 
   if (isDevDemo) {

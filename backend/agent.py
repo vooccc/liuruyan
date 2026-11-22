@@ -366,7 +366,7 @@ class Agent:
 
         # 记忆提炼器（延迟初始化，避免未使用时创建）
         self._refiner: Optional[MemoryRefinerV2] = None
-        self._refine_cooldown = 0  # 冷却计数器，每轮-1
+        self._refine_cooldowns: Dict[str, int] = {}  # 按 session_id 隔离的冷却计数器
 
         # 对话历史不再由 Agent 维护，保留仅为向后兼容
         # 调用方应通过 build_messages() 传入 history
@@ -643,6 +643,7 @@ class Agent:
             session_ns=session_ns,
             workspace=workspace,
             turn_ns=turn_ns,
+            user_message=user_message,
         )
 
     def _resolve_session_namespace(
@@ -665,21 +666,13 @@ class Agent:
             session = get_session_manager()._sessions.get(session_id)
             if session is None:
                 return None, None
-            workspace = session.get_pinned_workspace_directory()
-
             ns_manager = self.memory_manager.namespace_manager
             if ns_manager.is_active():
-                # 显式绑定（手动/自动）优先；其次工作区锚定；最后开篇自动识别
-                if session.project_namespace:
-                    return session.project_namespace, workspace
-                workspace_ns = ns_manager.resolve_from_workspace(workspace)
-                if workspace_ns:
-                    return workspace_ns, workspace
-                from .namespace_manager import autobind_project
-                hit = autobind_project(session, ns_manager, user_message or "")
-                if hit:
-                    return hit, workspace
+                return ns_manager.resolve_session_binding(
+                    session, user_text=user_message, autobind=True
+                )
 
+            workspace = session.get_pinned_workspace_directory()
             return None, workspace
         except Exception:
             return None, None
@@ -1299,7 +1292,13 @@ class Agent:
         - 支持 system_extra 参数，用于场景上下文注入
         """
         _agent_wd_token = None
+        _agent_sid_token = None
         if session_id:
+            try:
+                from .llm_client import _current_session_id_var
+                _agent_sid_token = _current_session_id_var.set(session_id)
+            except Exception:
+                pass
             try:
                 from backend.tools.builtin.file_tools import _current_working_directory_var
                 if _current_working_directory_var.get() is None:
@@ -1436,6 +1435,12 @@ class Agent:
                     _current_working_directory_var.reset(_agent_wd_token)
                 except Exception:
                     pass
+            if _agent_sid_token is not None:
+                try:
+                    from .llm_client import _current_session_id_var
+                    _current_session_id_var.reset(_agent_sid_token)
+                except Exception:
+                    pass
 
     async def run_collected(
         self,
@@ -1450,62 +1455,77 @@ class Agent:
         user_message_already_in_history: bool = False,
     ) -> Dict[str, Any]:
         """Run one runtime turn and collect the final text plus optional event trace."""
-        messages, prompt_cache_info = await self.build_messages(
-            user_message,
-            session_id=session_id,
-            conversation_history=conversation_history,
-            system_extra=system_extra,
-            recall_context=recall_context,
-            user_message_already_in_history=user_message_already_in_history,
-        )
-        if self._should_use_v2_chain():
-            ctx = self._build_run_context(session_id=session_id)
-            result = await self._ensure_v2_lead().run_collected(
-                messages, ctx,
-                collect_events=collect_events,
-                use_tools=use_tools,
-                session_id=session_id,
-            )
-        else:
-            result = await self.run_messages_collected(
-                messages,
-                collect_events=collect_events,
-                use_tools=use_tools,
-                session_id=session_id,
-            )
-        response = result["text"]
-        notice_events = list(result["notice_events"])
-        events = list(result["events"])
-        turn_events = list(result.get("trace_events") or [])
-
-        if not defer_refine:
-            growth_result = self._log_conversation(
+        _collected_sid_token = None
+        if session_id:
+            try:
+                from .llm_client import _current_session_id_var
+                _collected_sid_token = _current_session_id_var.set(session_id)
+            except Exception:
+                pass
+        try:
+            messages, prompt_cache_info = await self.build_messages(
                 user_message,
-                response,
                 session_id=session_id,
-                turn_events=turn_events,
-                equipped_skills=self.skill_loader.get_equipped_skills(self.agent_id),
-                growth_response=response,
+                conversation_history=conversation_history,
+                system_extra=system_extra,
+                recall_context=recall_context,
+                user_message_already_in_history=user_message_already_in_history,
             )
-            growth_notices = self._build_skill_growth_notices(growth_result)
-            notice_events.extend(growth_notices)
-            if collect_events:
-                next_seq = len(turn_events)
-                for notice in growth_notices:
-                    events.append({
-                        "seq": next_seq,
-                        "type": "system_notice",
-                        "timestamp": datetime.now().isoformat(),
-                        "kind": notice.get("kind"),
-                        "content": notice.get("content", ""),
-                    })
-                    next_seq += 1
+            if self._should_use_v2_chain():
+                ctx = self._build_run_context(session_id=session_id)
+                result = await self._ensure_v2_lead().run_collected(
+                    messages, ctx,
+                    collect_events=collect_events,
+                    use_tools=use_tools,
+                    session_id=session_id,
+                )
+            else:
+                result = await self.run_messages_collected(
+                    messages,
+                    collect_events=collect_events,
+                    use_tools=use_tools,
+                    session_id=session_id,
+                )
+            response = result["text"]
+            notice_events = list(result["notice_events"])
+            events = list(result["events"])
+            turn_events = list(result.get("trace_events") or [])
 
-        return {
-            "text": response,
-            "notice_events": notice_events,
-            "events": events,
-        }
+            if not defer_refine:
+                growth_result = self._log_conversation(
+                    user_message,
+                    response,
+                    session_id=session_id,
+                    turn_events=turn_events,
+                    equipped_skills=self.skill_loader.get_equipped_skills(self.agent_id),
+                    growth_response=response,
+                )
+                growth_notices = self._build_skill_growth_notices(growth_result)
+                notice_events.extend(growth_notices)
+                if collect_events:
+                    next_seq = len(turn_events)
+                    for notice in growth_notices:
+                        events.append({
+                            "seq": next_seq,
+                            "type": "system_notice",
+                            "timestamp": datetime.now().isoformat(),
+                            "kind": notice.get("kind"),
+                            "content": notice.get("content", ""),
+                        })
+                        next_seq += 1
+
+            return {
+                "text": response,
+                "notice_events": notice_events,
+                "events": events,
+            }
+        finally:
+            if _collected_sid_token is not None:
+                try:
+                    from .llm_client import _current_session_id_var
+                    _current_session_id_var.reset(_collected_sid_token)
+                except Exception:
+                    pass
 
     async def run_messages_collected(
         self,
@@ -1594,9 +1614,10 @@ class Agent:
         # 异步触发记忆提炼（不阻塞聊天流程）
         self._trigger_refine(
             user_message,
-            assistant_response,
+            growth_response if growth_response is not None else assistant_response,
             session_id=session_id,
             message_span=message_span,
+            turn_events=turn_events,
         )
         return growth_result
 
@@ -1637,27 +1658,94 @@ class Agent:
         assistant_response: str,
         session_id: Optional[str] = None,
         message_span: Optional[List[int]] = None,
+        turn_events: Optional[List[Dict[str, Any]]] = None,
     ):
-        """异步触发记忆提炼（带冷却控制，每5轮最多触发1次）"""
-        # 冷却递减
-        if self._refine_cooldown > 0:
-            self._refine_cooldown -= 1
+        """异步触发记忆提炼（按 session_id 隔离冷却；高信号轮次穿透冷却立即触发）"""
+        from .refine_signals import (
+            detect_high_signal_turn,
+            extract_tool_actions_summary,
+            unwrap_assistant_payload,
+        )
+
+        clean_asst, embedded_segs = unwrap_assistant_payload(assistant_response)
+        effective_events = turn_events if turn_events is not None else embedded_segs
+        is_high_signal, signal_reasons = detect_high_signal_turn(
+            user_message, clean_asst, effective_events
+        )
+
+        cooldown_key = session_id or "__global__"
+        remaining = self._refine_cooldowns.get(cooldown_key, 0)
+        if remaining > 0 and not is_high_signal:
+            self._refine_cooldowns[cooldown_key] = remaining - 1
             return
+        if remaining > 0 and is_high_signal:
+            logger.info(
+                "[Agent:%s] ⚡ 高信号轮次穿透提炼冷却 (session=%s, reasons=%s)",
+                self.agent_id,
+                cooldown_key,
+                signal_reasons,
+            )
 
         refiner = self._get_refiner()
         if not refiner:
             return
 
+        tool_summary = extract_tool_actions_summary(effective_events)
+
+        session_ns: Optional[str] = None
+        session_obj = None
+        main_loop = None
+        try:
+            main_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            main_loop = None
+
+        if session_id:
+            try:
+                from .session import get_session_manager
+                session_obj = get_session_manager()._sessions.get(session_id)
+                if session_obj is not None:
+                    ns_manager = self.memory_manager.namespace_manager
+                    if ns_manager.is_active():
+                        session_ns, _ = ns_manager.resolve_session_binding(
+                            session_obj, autobind=False
+                        )
+            except Exception:
+                session_ns = None
+
+        def _on_namespace_created(new_ns_id: str) -> None:
+            if session_obj is None or getattr(session_obj, "project_namespace", None):
+                return
+            if main_loop is not None and not main_loop.is_closed():
+                def _bind() -> None:
+                    if not getattr(session_obj, "project_namespace", None):
+                        session_obj.set_project_namespace(new_ns_id)
+                main_loop.call_soon_threadsafe(_bind)
+            else:
+                session_obj.set_project_namespace(new_ns_id)
+
         try:
             import threading
             t = threading.Thread(
                 target=self._run_refine,
-                args=(refiner, user_message, assistant_response, session_id, message_span),
-                daemon=True
+                args=(
+                    refiner,
+                    user_message,
+                    clean_asst,
+                    session_id,
+                    message_span,
+                    session_ns,
+                    _on_namespace_created if session_obj is not None else None,
+                    tool_summary,
+                ),
+                daemon=True,
             )
             t.start()
-            # 设冷却：成功触发后5轮不再触发
-            self._refine_cooldown = 4
+            # 设冷却：成功触发后本会话 5 轮内不再触发（并限制字典上限防长期积累）
+            if len(self._refine_cooldowns) >= 256 and cooldown_key not in self._refine_cooldowns:
+                oldest_key = next(iter(self._refine_cooldowns))
+                self._refine_cooldowns.pop(oldest_key, None)
+            self._refine_cooldowns[cooldown_key] = 4
         except Exception as e:
             logger.error("[Agent:%s] 提炼触发失败: %s", self.agent_id, e)
 
@@ -1668,6 +1756,9 @@ class Agent:
         asst_msg: str,
         session_id: Optional[str] = None,
         message_span: Optional[List[int]] = None,
+        session_ns: Optional[str] = None,
+        on_namespace_created=None,
+        tool_summary: Optional[str] = None,
     ):
         """在线程中运行记忆提炼"""
         try:
@@ -1676,9 +1767,18 @@ class Agent:
                 asst_msg,
                 session_id=session_id,
                 message_span=message_span,
+                session_ns=session_ns,
+                on_namespace_created=on_namespace_created,
+                tool_summary=tool_summary,
             )
-            if result.get("memory_saved") or result.get("reflection_saved"):
-                logger.info("[Agent:%s] ✅ 记忆提炼完成: memory=%s, reflection=%s", self.agent_id, result.get('memory_saved'), result.get('reflection_saved'))
+            if result.get("memory_saved") or result.get("reflection_saved") or result.get("profile_updated"):
+                logger.info(
+                    "[Agent:%s] ✅ 记忆提炼完成: memory=%s, reflection=%s, profile=%s",
+                    self.agent_id,
+                    result.get("memory_saved"),
+                    result.get("reflection_saved"),
+                    result.get("profile_updated"),
+                )
             else:
                 logger.info("[Agent:%s] ⏭️ 本次对话无需沉淀", self.agent_id)
         except Exception as e:
@@ -1690,12 +1790,14 @@ class Agent:
         assistant_response: str,
         session_id: Optional[str] = None,
         message_span: Optional[List[int]] = None,
+        turn_events: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
         self._trigger_refine(
             user_message,
             assistant_response,
             session_id=session_id,
             message_span=message_span,
+            turn_events=turn_events,
         )
 
     def remember(self, content: str, memory_type: str = "diary"):

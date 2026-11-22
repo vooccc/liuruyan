@@ -18,6 +18,7 @@ feature flag 在 Agent 层面（LIURUYAN_USE_V2_CHAIN，默认 ON）。
 
 from __future__ import annotations
 
+import inspect
 import logging
 from dataclasses import replace as _dc_replace
 from typing import Any, AsyncIterator
@@ -110,7 +111,11 @@ class LeadAgent:
             ClarificationMiddleware(),      # 17 metric-only — 必须最后
         ]
 
-    def _build_state(self, messages: list[dict[str, Any]]) -> dict[str, Any]:
+    def _build_state(
+        self,
+        messages: list[dict[str, Any]],
+        session_id: str | None = None,
+    ) -> dict[str, Any]:
         try:
             equipped = self.agent.skill_loader.get_equipped_skills(
                 self.agent.agent_id
@@ -122,8 +127,8 @@ class LeadAgent:
         # USER+MEMORY+日记+反思+情感整段拼装好的字符串。失败 → "" → mw 跳过注入。
         # 不直接 import backend.memory_manager（boundary 红线）；走 duck-typing
         # 调 v1 Agent.get_memory_context()——v1 内部已 prefetch + 温度排序 + 截断。
-        # v5（2026-10-24）：带上最后一条 user 消息原文，供开篇项目自动识别
-        # （namespace autobind；见 backend/namespace_manager.autobind_project）。
+        # v5（2026-10-24）：带上 session_id + 最后一条 user 消息原文，让会话绑定、
+        # 工作区锚定与开篇项目自动识别（namespace autobind）在 v2 chain 主路径生效。
         try:
             last_user_text = ""
             for _m in reversed(messages):
@@ -137,9 +142,25 @@ class LeadAgent:
                             if isinstance(_b, dict) and _b.get("type") == "text"
                         )
                     break
-            memory_text = (
-                self.agent.get_memory_context(user_message=last_user_text) or ""
-            )
+            get_mem = getattr(self.agent, "get_memory_context", None)
+            if callable(get_mem):
+                try:
+                    sig = inspect.signature(get_mem)
+                    params = sig.parameters
+                    has_varkw = any(
+                        p.kind == inspect.Parameter.VAR_KEYWORD
+                        for p in params.values()
+                    )
+                    kwargs: dict[str, Any] = {}
+                    if has_varkw or "session_id" in params:
+                        kwargs["session_id"] = session_id
+                    if has_varkw or "user_message" in params:
+                        kwargs["user_message"] = last_user_text
+                    memory_text = get_mem(**kwargs) or ""
+                except (TypeError, ValueError):
+                    memory_text = get_mem(user_message=last_user_text) or ""
+            else:
+                memory_text = ""
         except Exception:
             log.exception("LeadAgent._build_state: get_memory_context failed")
             memory_text = ""
@@ -388,7 +409,7 @@ class LeadAgent:
     ) -> AsyncIterator[dict[str, Any]]:
         """流式：跑 chain 钩子 + 透传 v1 llm_client.chat 事件。"""
         ctx = self._ensure_trace_id(ctx)
-        state = self._build_state(messages)
+        state = self._build_state(messages, session_id=ctx.session_id or session_id or None)
         bus = get_event_bus()  # 进程级单例；未装配时 None → emit 自动跳过
         # F-2c：顶层 CancelEvent。subagent / worker runtime 从 ContextVar
         # 拿到后调 .child(...) 派子 event 透给 v1 scheduler.submit；外部（chain
@@ -468,7 +489,7 @@ class LeadAgent:
         {text, notice_events, events, trace_events}。
         """
         ctx = self._ensure_trace_id(ctx)
-        state = self._build_state(messages)
+        state = self._build_state(messages, session_id=ctx.session_id or session_id or None)
         bus = get_event_bus()
         # F-2c：顶层 CancelEvent — 跟 run_streaming 同模式
         cancel_event = CancelEvent(trace_id=ctx.trace_id or "")

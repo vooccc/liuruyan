@@ -24,8 +24,8 @@
 走 legacy MEMORY.md 老路径，行为与 v4 完全一致。迁移是纯增量操作：
 删掉 namespaces/ 目录即回滚。
 
-本模块只做文件 IO 与解析，不调 LLM——LLM 分流在 MemoryRefinerV2，
-存量迁移在 scripts/migrate_memory_namespaces.py。
+本模块只做文件 IO、解析、渲染与确定性重建，不调 LLM——LLM 分流与智能合并在
+MemoryRefinerV2，存量迁移在 scripts/migrate_memory_namespaces.py。
 """
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ import re
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +48,8 @@ GLOBAL_MAX_CHARS = 20000
 TIMELINE_TAIL_DEFAULT = 50
 
 _SLUG_RE = re.compile(r"[^0-9A-Za-z\u4e00-\u9fff]+")
+_MD_LINK_RE = re.compile(r"\[([^\]]+)\]\([^)]+\)")
+_ARCHIVE_SUFFIX_RE = re.compile(r"-(\d{14})$")
 
 
 def _now_iso() -> str:
@@ -60,11 +62,83 @@ def slugify_namespace_id(name: str) -> str:
     return slug or "ns"
 
 
+def _atomic_write_text(path: Path, content: str) -> None:
+    """原子写文本文件（写临时文件再 replace），避免并发读或中断产生半截文件。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{threading.get_ident()}.tmp")
+    tmp.write_text(content, encoding="utf-8")
+    tmp.replace(path)
+
+
+def _clean_markdown_inline(text: str) -> str:
+    """清理单行内联 Markdown 符号，避免摘要截出半截 `**` 或反引号。"""
+    cleaned = _MD_LINK_RE.sub(r"\1", text or "")
+    cleaned = re.sub(r"^\s*(?:[-*+]\s+|\d+\.\s+)", "", cleaned)
+    cleaned = cleaned.replace("**", "").replace("__", "").replace("`", "")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
+
+
+def extract_card_summary(card: str, max_len: int = 100) -> str:
+    """从状态卡提取干净的一行摘要（供注册表与项目索引展示）。"""
+    meaningful_lines: List[str] = []
+    for raw in (card or "").splitlines():
+        s = raw.strip()
+        if not s or s.startswith("#") or s.startswith("<!--") or s.startswith("---"):
+            continue
+        cleaned = _clean_markdown_inline(s)
+        if not cleaned:
+            continue
+        meaningful_lines.append(cleaned)
+        if len(" ".join(meaningful_lines)) >= max_len + 20:
+            break
+
+    if not meaningful_lines:
+        return ""
+
+    # 若首行只是“当前状态：”之类短标签，拼上下一行正文
+    first = meaningful_lines[0]
+    if len(first) <= 12 and first.endswith(("：", ":")) and len(meaningful_lines) > 1:
+        combined = f"{first} {meaningful_lines[1]}"
+    else:
+        combined = first
+
+    if len(combined) <= max_len:
+        return combined
+
+    # 优先在句末标点边界截断，避免半截断词
+    slice_text = combined[:max_len]
+    for sep in ("。", "；", ";", "，", ","):
+        pos = slice_text.rfind(sep)
+        if pos >= max_len // 2:
+            return slice_text[: pos + 1].rstrip("，, ")
+    return slice_text.rstrip() + "…"
+
+
+def _extract_markdown_section(card: str, heading_keywords: Tuple[str, ...]) -> str:
+    """提取指定 ### 标题节的完整正文（不含标题行）。"""
+    lines = (card or "").splitlines()
+    captured: List[str] = []
+    in_section = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("### ") or stripped.startswith("## "):
+            title = stripped.lstrip("#").strip()
+            if in_section:
+                break
+            if any(kw in title for kw in heading_keywords):
+                in_section = True
+            continue
+        if in_section:
+            captured.append(line)
+    return "\n".join(captured).strip()
+
+
 class NamespaceManager:
     """项目命名空间注册表 + 状态卡 + timeline 的文件后端。
 
-    线程安全：REGISTRY.json 读写全程持锁（refiner 在后台线程跑，
-    主线程同时可能建项目/绑定会话）。
+    线程安全：REGISTRY.json、状态卡、GLOBAL.md 与 timeline.jsonl 读写全程持 RLock
+    （refiner 在后台线程跑，主线程同时可能建项目/绑定会话/工具写入）。
     """
 
     def __init__(self, namespaces_dir: Path):
@@ -83,21 +157,39 @@ class NamespaceManager:
         """确保注册表落盘（启用命名空间模式）。已有注册表时为 no-op。
         场景：某角色只有关系记忆、暂无项目时，迁移/首次写入也要启用模式，
         否则全局层写入了却不注入（legacy 路径继续读 MEMORY.md）。"""
-        if not self.is_active():
-            with self._lock:
+        with self._lock:
+            if not self.is_active():
                 self._write_registry({"version": 1, "namespaces": []})
 
     # ── 注册表 CRUD ───────────────────────────────────────────
 
-    def list_namespaces(self) -> List[Dict[str, Any]]:
+    def list_namespaces(self, include_archived: bool = True) -> List[Dict[str, Any]]:
         with self._lock:
             data = self._read_registry()
-        return [dict(entry) for entry in data.get("namespaces", [])]
+        entries = [dict(entry) for entry in data.get("namespaces", [])]
+        if not include_archived:
+            entries = [e for e in entries if e.get("status") != "archived"]
+        return entries
 
     def get_namespace(self, ns_id: str) -> Optional[Dict[str, Any]]:
         for entry in self.list_namespaces():
             if entry.get("id") == ns_id:
                 return dict(entry)
+        return None
+
+    def resolve_id_or_alias(self, project: str, include_archived: bool = False) -> Optional[Dict[str, Any]]:
+        """按 id / canonical name / alias 精确解析项目（不区分大小写）。"""
+        target = (project or "").strip().lower()
+        if not target:
+            return None
+        for entry in self.list_namespaces(include_archived=include_archived):
+            candidates = [
+                entry.get("id", ""),
+                entry.get("name", ""),
+                *(entry.get("aliases") or []),
+            ]
+            if any((c or "").strip().lower() == target for c in candidates):
+                return entry
         return None
 
     def create_namespace(
@@ -139,11 +231,11 @@ class NamespaceManager:
             ns_dir.mkdir(parents=True, exist_ok=True)
             card = ns_dir / "FACTS.md"
             if not card.exists():
-                card.write_text(
+                _atomic_write_text(
+                    card,
                     f"# {name} · 项目状态卡\n\n"
                     "<!-- 状态卡：新进展覆写更新，不要追加流水账。"
                     "结构建议：当前状态 / 关键事实 / 红线与禁忌 / 情感基调 -->\n",
-                    encoding="utf-8",
                 )
             (ns_dir / "timeline.jsonl").touch()
         logger.info("[NamespaceManager] created namespace %s (%s)", final_id, name)
@@ -196,35 +288,130 @@ class NamespaceManager:
                 ns_dir.rename(target)
         return True
 
+    def list_archived_backups(self) -> List[Dict[str, Any]]:
+        """列出 _archived/ 中被注销留底的项目备份。"""
+        with self._lock:
+            archived_dir = self.dir / "_archived"
+            if not archived_dir.exists():
+                return []
+            items: List[Dict[str, Any]] = []
+            for child in sorted(archived_dir.iterdir(), reverse=True):
+                if not child.is_dir():
+                    continue
+                folder_name = child.name
+                base_id = _ARCHIVE_SUFFIX_RE.sub("", folder_name)
+                card_file = child / "FACTS.md"
+                tl_file = child / "timeline.jsonl"
+                display_name = base_id
+                summary = ""
+                if card_file.exists():
+                    try:
+                        card_text = card_file.read_text(encoding="utf-8")
+                        for line in card_text.splitlines():
+                            s = line.strip()
+                            if s.startswith("# "):
+                                display_name = s[2:].split("·")[0].strip() or base_id
+                                break
+                        summary = extract_card_summary(card_text, max_len=80)
+                    except OSError:
+                        pass
+                tl_count = 0
+                if tl_file.exists():
+                    try:
+                        with open(tl_file, encoding="utf-8") as fh:
+                            tl_count = sum(1 for ln in fh if ln.strip())
+                    except OSError:
+                        pass
+                m = _ARCHIVE_SUFFIX_RE.search(folder_name)
+                archived_at = m.group(1) if m else ""
+                items.append({
+                    "folder_name": folder_name,
+                    "base_id": base_id,
+                    "name": display_name,
+                    "summary": summary,
+                    "timeline_count": tl_count,
+                    "archived_at": archived_at,
+                })
+            return items
+
+    def restore_archived_backup(self, folder_name: str) -> Optional[Dict[str, Any]]:
+        """从 _archived/ 恢复被注销的项目并重新注册到 REGISTRY.json。"""
+        clean_name = Path(folder_name).name
+        if not clean_name or clean_name != folder_name:
+            return None
+        with self._lock:
+            archived_dir = self.dir / "_archived"
+            src = archived_dir / clean_name
+            if not src.exists() or not src.is_dir():
+                return None
+
+            base_id = _ARCHIVE_SUFFIX_RE.sub("", clean_name) or "restored-ns"
+            data = self._read_registry()
+            existing_ids = {e.get("id") for e in data.get("namespaces", [])}
+            final_id, seq = base_id, 2
+            while final_id in existing_ids or (self.dir / final_id).exists():
+                final_id = f"{base_id}-{seq}"
+                seq += 1
+
+            dest = self.dir / final_id
+            src.rename(dest)
+
+            card_file = dest / "FACTS.md"
+            card_text = card_file.read_text(encoding="utf-8") if card_file.exists() else ""
+            display_name = final_id
+            for line in card_text.splitlines():
+                s = line.strip()
+                if s.startswith("# "):
+                    display_name = s[2:].split("·")[0].strip() or final_id
+                    break
+            summary = extract_card_summary(card_text, max_len=100)
+
+            entry = {
+                "id": final_id,
+                "name": display_name,
+                "aliases": [],
+                "workspace_path": None,
+                "summary": summary,
+                "status": "active",
+                "created_at": _now_iso(),
+                "updated_at": _now_iso(),
+            }
+            data.setdefault("namespaces", []).append(entry)
+            self._write_registry(data)
+            logger.info("[NamespaceManager] restored archived backup %s -> %s", clean_name, final_id)
+            return dict(entry)
+
     # ── 别名/工作区解析（refiner 路由 + 会话锚定共用） ─────────
 
     def resolve_from_text(self, text: str) -> Optional[str]:
         """从一段记忆/对话文本里匹配项目：canonical name + aliases 子串命中。
 
-        命中多个时返回注册表顺序里最靠前的（先建的项目优先）。
+        过滤已归档项目；多个命中时最长 token 优先（同长度按注册表顺序先建优先），
+        防止短别名抢先误命中更长更精确的项目名。
         """
         if not text:
             return None
-        for entry in self.list_namespaces():
-            if entry.get("status") == "archived":
-                continue
+        best: Optional[Tuple[int, int, str]] = None
+        for idx, entry in enumerate(self.list_namespaces(include_archived=False)):
             candidates = [entry.get("name", "")] + list(entry.get("aliases") or [])
             for token in candidates:
                 token = (token or "").strip()
                 if len(token) >= 2 and token in text:
-                    return entry.get("id")
-        return None
+                    score = (len(token), -idx)
+                    if best is None or score > (best[0], best[1]):
+                        best = (len(token), -idx, entry.get("id"))
+        return best[2] if best else None
 
     def resolve_from_workspace(self, workspace: Optional[str]) -> Optional[str]:
-        """工作区目录 → 命名空间（编码项目自动锚定用）。前缀匹配，长路径优先。"""
+        """工作区目录 → 命名空间（编码项目自动锚定用）。前缀匹配，长路径优先，忽略已归档项目。"""
         if not workspace:
             return None
         try:
             target = Path(workspace).expanduser().resolve()
         except Exception:
             return None
-        best: Optional[tuple[int, str]] = None
-        for entry in self.list_namespaces():
+        best: Optional[Tuple[int, str]] = None
+        for entry in self.list_namespaces(include_archived=False):
             anchor = entry.get("workspace_path")
             if not anchor:
                 continue
@@ -238,22 +425,74 @@ class NamespaceManager:
                     best = (depth, entry.get("id"))
         return best[1] if best else None
 
+    def resolve_session_binding(
+        self,
+        session: Any,
+        user_text: Optional[str] = None,
+        autobind: bool = True,
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """解析当前会话的项目绑定与工作区目录（低耦合统一入口）。
+
+        优先级：
+        1. session.project_namespace（存在且未归档）；
+        2. session 工作区目录 → workspace 锚定（命中且未绑定时自动落盘绑定）；
+        3. 开篇文本自动绑定（autobind_project）。
+        """
+        workspace = None
+        try:
+            get_wd = getattr(session, "get_pinned_workspace_directory", None)
+            if callable(get_wd):
+                workspace = get_wd()
+        except Exception:
+            workspace = None
+
+        if not self.is_active() or session is None:
+            return None, workspace
+
+        bound = getattr(session, "project_namespace", None)
+        if bound:
+            entry = self.get_namespace(bound)
+            if entry and entry.get("status") != "archived":
+                return bound, workspace
+
+        ws_ns = self.resolve_from_workspace(workspace)
+        if ws_ns:
+            if autobind and not bound and hasattr(session, "set_project_namespace"):
+                try:
+                    session.set_project_namespace(ws_ns)
+                    logger.info(
+                        "[NamespaceManager] workspace autobind session=%s -> %s",
+                        getattr(session, "id", "?"), ws_ns,
+                    )
+                except Exception:
+                    logger.debug("[NamespaceManager] workspace autobind failed", exc_info=True)
+            return ws_ns, workspace
+
+        if autobind and user_text:
+            hit = autobind_project(session, self, user_text)
+            if hit:
+                return hit, workspace
+
+        return None, workspace
+
     # ── 全局层（关系记忆） ────────────────────────────────────
 
     def read_global(self) -> str:
-        if self.global_file.exists():
-            return self.global_file.read_text(encoding="utf-8")
-        return ""
+        with self._lock:
+            if self.global_file.exists():
+                return self.global_file.read_text(encoding="utf-8")
+            return ""
 
     def write_global(self, content: str) -> None:
-        self.dir.mkdir(parents=True, exist_ok=True)
-        self.global_file.write_text(content, encoding="utf-8")
+        with self._lock:
+            _atomic_write_text(self.global_file, content)
 
     def append_global_entry(self, entry_text: str, date: Optional[str] = None) -> None:
         """追加一条全局层记忆（关系里程碑 / 跨项目认知）。"""
-        existing = self.read_global().rstrip()
-        block = f"### [{date or datetime.now().strftime('%Y-%m-%d')}] {entry_text.strip()}"
-        self.write_global((existing + "\n\n" + block).lstrip() + "\n")
+        with self._lock:
+            existing = self.read_global().rstrip()
+            block = f"### [{date or datetime.now().strftime('%Y-%m-%d')}] {entry_text.strip()}"
+            self.write_global((existing + "\n\n" + block).lstrip() + "\n")
 
     # ── 项目状态卡 + timeline ─────────────────────────────────
 
@@ -261,20 +500,23 @@ class NamespaceManager:
         return self.dir / ns_id
 
     def read_card(self, ns_id: str) -> str:
-        card = self._ns_dir(ns_id) / "FACTS.md"
-        if card.exists():
-            return card.read_text(encoding="utf-8")
-        return ""
+        with self._lock:
+            card = self._ns_dir(ns_id) / "FACTS.md"
+            if card.exists():
+                return card.read_text(encoding="utf-8")
+            return ""
 
     def write_card(self, ns_id: str, content: str) -> None:
-        ns_dir = self._ns_dir(ns_id)
-        ns_dir.mkdir(parents=True, exist_ok=True)
-        (ns_dir / "FACTS.md").write_text(content, encoding="utf-8")
+        with self._lock:
+            ns_dir = self._ns_dir(ns_id)
+            ns_dir.mkdir(parents=True, exist_ok=True)
+            _atomic_write_text(ns_dir / "FACTS.md", content)
 
     def append_card_line(self, ns_id: str, line: str) -> None:
         """LLM 卡片合并失败时的兜底：原文追加到卡底，保证信息不丢。"""
-        existing = self.read_card(ns_id).rstrip()
-        self.write_card(ns_id, existing + "\n\n- " + line.strip() + "\n")
+        with self._lock:
+            existing = self.read_card(ns_id).rstrip()
+            self.write_card(ns_id, existing + "\n\n- " + line.strip() + "\n")
 
     def append_timeline(self, ns_id: str, entry: Dict[str, Any]) -> None:
         """timeline 追加一条事件（事实之源，永不覆写）。"""
@@ -282,26 +524,170 @@ class NamespaceManager:
             "ts": _now_iso(),
             **entry,
         }
-        ns_dir = self._ns_dir(ns_id)
-        ns_dir.mkdir(parents=True, exist_ok=True)
-        with open(ns_dir / "timeline.jsonl", "a", encoding="utf-8") as fh:
-            fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+        with self._lock:
+            ns_dir = self._ns_dir(ns_id)
+            ns_dir.mkdir(parents=True, exist_ok=True)
+            with open(ns_dir / "timeline.jsonl", "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(record, ensure_ascii=False) + "\n")
 
-    def read_timeline(self, ns_id: str, limit: int = TIMELINE_TAIL_DEFAULT) -> List[Dict[str, Any]]:
-        path = self._ns_dir(ns_id) / "timeline.jsonl"
-        if not path.exists():
-            return []
-        records: List[Dict[str, Any]] = []
-        with open(path, encoding="utf-8") as fh:
-            for line in fh:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    records.append(json.loads(line))
-                except json.JSONDecodeError:
-                    continue
-        return records[-limit:]
+    def _read_all_timeline(self, ns_id: str, query: Optional[str] = None) -> List[Dict[str, Any]]:
+        with self._lock:
+            path = self._ns_dir(ns_id) / "timeline.jsonl"
+            if not path.exists():
+                return []
+            records: List[Dict[str, Any]] = []
+            with open(path, encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        records.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+        if query and query.strip():
+            q = query.strip().lower()
+            filtered: List[Dict[str, Any]] = []
+            for rec in records:
+                haystack = " ".join([
+                    str(rec.get("event", "")),
+                    str(rec.get("decision", "")),
+                    str(rec.get("cognition", "")),
+                    str(rec.get("detail", "")),
+                    " ".join(str(t) for t in (rec.get("tags") or [])),
+                ]).lower()
+                if q in haystack:
+                    filtered.append(rec)
+            return filtered
+        return records
+
+    def count_timeline(self, ns_id: str, query: Optional[str] = None) -> int:
+        return len(self._read_all_timeline(ns_id, query=query))
+
+    def read_timeline(
+        self,
+        ns_id: str,
+        limit: Optional[int] = TIMELINE_TAIL_DEFAULT,
+        offset: int = 0,
+        query: Optional[str] = None,
+        newest_first: bool = False,
+    ) -> List[Dict[str, Any]]:
+        records = self._read_all_timeline(ns_id, query=query)
+        if newest_first:
+            records = list(reversed(records))
+            if offset > 0:
+                records = records[offset:]
+            if limit is not None and limit > 0:
+                return records[:limit]
+            return records
+        # 默认保持向后兼容：返回最尾部的 limit 条（时间正序）
+        if offset > 0:
+            records = records[:-offset] if offset < len(records) else []
+        if limit is not None and limit > 0:
+            return records[-limit:]
+        return records
+
+    def rebuild_card_skeleton_from_timeline(self, ns_id: str) -> str:
+        """确定性物化视图重建：从 timeline.jsonl 全量重算状态卡骨架（不依赖 LLM）。
+
+        保留现有卡片中的 `### 红线与禁忌` 与 `### 情感基调`（防止人工维护的红线丢失）。
+        """
+        with self._lock:
+            entry = self.get_namespace(ns_id)
+            name = (entry or {}).get("name") or ns_id
+            existing_card = self.read_card(ns_id)
+            records = self._read_all_timeline(ns_id)
+
+            red_lines = _extract_markdown_section(existing_card, ("红线", "禁忌"))
+            tone = _extract_markdown_section(existing_card, ("情感基调",))
+
+            latest = records[-1] if records else None
+            status_lines: List[str] = []
+            if latest:
+                ts_date = str(latest.get("ts", ""))[:10]
+                ev = str(latest.get("event", "")).strip()
+                dec = str(latest.get("decision", "")).strip()
+                if ev:
+                    status_lines.append(f"最近进展（{ts_date or '未知日期'}）：{ev}")
+                if dec and dec != "无":
+                    status_lines.append(f"最新决策：{dec}")
+            else:
+                status_lines.append("暂无时间线记录。")
+
+            fact_lines: List[str] = []
+            for rec in records[-15:]:
+                ts_date = str(rec.get("ts", ""))[:10]
+                ev = str(rec.get("event", "")).strip()
+                dec = str(rec.get("decision", "")).strip()
+                cog = str(rec.get("cognition", "")).strip()
+                parts = [p for p in (ev, f"决策：{dec}" if dec and dec != "无" else "", f"认知：{cog}" if cog else "") if p]
+                if parts:
+                    prefix = f"[{ts_date}] " if ts_date else ""
+                    fact_lines.append(f"- {prefix}{'；'.join(parts)}")
+
+            sections = [
+                f"# {name} · 项目状态卡",
+                "### 当前状态\n" + "\n".join(status_lines),
+                "### 关键事实\n" + ("\n".join(fact_lines) if fact_lines else "- 暂无记录"),
+            ]
+            if red_lines:
+                sections.append("### 红线与禁忌\n" + red_lines)
+            if tone:
+                sections.append("### 情感基调\n" + tone)
+
+            rebuilt = "\n\n".join(sections).rstrip() + "\n"
+            self.write_card(ns_id, rebuilt)
+            summary = extract_card_summary(rebuilt, max_len=100)
+            self.update_namespace(ns_id, summary=summary)
+            return rebuilt
+
+    # ── 树叉层（topics/*.md） ─────────────────────────────────
+
+    def list_topics(self, ns_id: str) -> List[Dict[str, Any]]:
+        from .namespace_topics import list_topics as _list_topics
+
+        with self._lock:
+            return _list_topics(self._ns_dir(ns_id))
+
+    def read_topic(self, ns_id: str, topic_name: str) -> str:
+        from .namespace_topics import read_topic as _read_topic
+
+        with self._lock:
+            return _read_topic(self._ns_dir(ns_id), topic_name)
+
+    def write_topic(self, ns_id: str, topic_name: str, content: str) -> str:
+        from .namespace_topics import write_topic as _write_topic
+
+        with self._lock:
+            return _write_topic(
+                self._ns_dir(ns_id),
+                topic_name,
+                content,
+                writer=_atomic_write_text,
+            )
+
+    def delete_topic(self, ns_id: str, topic_name: str) -> bool:
+        from .namespace_topics import delete_topic as _delete_topic
+
+        with self._lock:
+            return _delete_topic(self._ns_dir(ns_id), topic_name)
+
+    def merge_topics(
+        self,
+        ns_id: str,
+        source_topic: str,
+        target_topic: str,
+        merged_content: Optional[str] = None,
+    ) -> str:
+        from .namespace_topics import merge_topics as _merge_topics
+
+        with self._lock:
+            return _merge_topics(
+                self._ns_dir(ns_id),
+                source_topic,
+                target_topic,
+                merged_content=merged_content,
+            )
 
     # ── 注入渲染 ──────────────────────────────────────────────
 
@@ -312,19 +698,27 @@ class NamespaceManager:
         turn_ns: Optional[str] = None,
         global_max_chars: int = GLOBAL_MAX_CHARS,
         card_max_chars: int = CARD_MAX_CHARS,
+        user_text: str = "",
     ) -> str:
         """拼装命名空间模式的记忆上下文。
 
         结构（与 legacy 路径互斥，永不注入 MEMORY.md）：
         1. ``## 全局记忆`` —— GLOBAL.md（关系层 + 跨项目习惯），常驻；
-        2. ``## 当前项目档案`` —— 会话绑定项目的状态卡（工作区锚定兜底）；
+        2. ``## 当前项目档案`` —— 会话绑定项目的根节点 FACTS.md + 树叉目录 + 按当前话题摘取的 1~2 个相关树叉；
         3. ``## 本轮提及的项目档案`` —— 用户本轮消息命中了**另一个**项目时，
            临时带出该项目的卡（仅本轮参考，不改会话主绑定）。这是"中途
            聊到别的项目自动带记忆"的机制：不抢切、不劫持，随提随取。
         4. ``## 其他项目索引`` —— 每个项目一行（名字 + summary），
            模型看到索引即可主动 recall_memory / 问用户，细节不进上下文。
         """
-        ns_id = session_ns if session_ns and self.get_namespace(session_ns) else None
+        from .namespace_topics import (
+            list_topics as _list_topics,
+            render_topics_catalog,
+            select_relevant_topics,
+        )
+
+        ns_entry = self.get_namespace(session_ns) if session_ns else None
+        ns_id = ns_entry["id"] if (ns_entry and ns_entry.get("status") != "archived") else None
         if ns_id is None:
             ns_id = self.resolve_from_workspace(workspace)
 
@@ -339,23 +733,47 @@ class NamespaceManager:
             card = self.read_card(ns_id).strip()
             if card and _has_substantive_content(card):
                 parts.append(
-                    f"## 当前项目档案 · {entry.get('name', ns_id)}\n" + _tail(card, card_max_chars)
+                    f"## 当前项目档案 · {entry.get('name', ns_id)}\n" + _truncate_card(card, card_max_chars)
                 )
+            # 树叉层：常驻目录 + 按当前话题动态摘取 1~2 个相关树叉
+            ns_dir = self._ns_dir(ns_id)
+            topics = _list_topics(ns_dir)
+            if topics:
+                catalog = render_topics_catalog(topics)
+                parts.append(
+                    f"### 项目树叉目录（共 {len(topics)} 个专题，需要细节可调 project_archive read_topic 读取）\n"
+                    + catalog
+                )
+                picked = select_relevant_topics(ns_dir, user_text)
+                for pt in picked:
+                    parts.append(
+                        f"### 当前话题相关树叉 · {pt['name']}\n{pt['content']}"
+                    )
 
         # 本轮临时提及的项目（≠ 会话主绑定）：带卡进上下文，标注临时性
-        if turn_ns and turn_ns != ns_id and self.get_namespace(turn_ns):
-            turn_entry = self.get_namespace(turn_ns) or {}
+        turn_entry = self.get_namespace(turn_ns) if turn_ns else None
+        if (
+            turn_ns
+            and turn_ns != ns_id
+            and turn_entry
+            and turn_entry.get("status") != "archived"
+        ):
             turn_card = self.read_card(turn_ns).strip()
             if turn_card and _has_substantive_content(turn_card):
                 parts.append(
                     f"## 本轮提及的项目档案 · {turn_entry.get('name', turn_ns)}"
                     "（用户这轮消息提到，仅本轮参考；会话主项目未变）\n"
-                    + _tail(turn_card, card_max_chars)
+                    + _truncate_card(turn_card, card_max_chars)
+                )
+            turn_picked = select_relevant_topics(self._ns_dir(turn_ns), user_text, max_count=1)
+            for pt in turn_picked:
+                parts.append(
+                    f"### 本轮提及树叉 · {turn_entry.get('name', turn_ns)} / {pt['name']}\n{pt['content']}"
                 )
 
         index_lines = []
-        for entry in self.list_namespaces():
-            if entry.get("status") == "archived" or entry.get("id") == ns_id:
+        for entry in self.list_namespaces(include_archived=False):
+            if entry.get("id") == ns_id:
                 continue
             summary = (entry.get("summary") or "").strip()
             suffix = f"—— {summary}" if summary else ""
@@ -372,14 +790,37 @@ class NamespaceManager:
 
     def stats(self) -> Dict[str, Any]:
         namespaces = self.list_namespaces()
+        active_count = sum(1 for e in namespaces if e.get("status") != "archived")
+        archived_count = len(namespaces) - active_count
+        cards_info: Dict[str, Any] = {}
+        total_card_chars = 0
+        total_timeline_count = 0
+        total_topic_count = 0
+        for e in namespaces:
+            nid = e["id"]
+            c_len = len(self.read_card(nid))
+            t_len = self.count_timeline(nid)
+            topics_len = len(self.list_topics(nid))
+            total_card_chars += c_len
+            total_timeline_count += t_len
+            total_topic_count += topics_len
+            cards_info[nid] = {
+                "chars": c_len,
+                "timeline_count": t_len,
+                "topic_count": topics_len,
+                "name": e["name"],
+                "status": e.get("status", "active"),
+            }
         return {
             "active": self.is_active(),
             "count": len(namespaces),
+            "active_count": active_count,
+            "archived_count": archived_count,
             "global_chars": len(self.read_global()),
-            "cards": {
-                e["id"]: {"chars": len(self.read_card(e["id"])), "name": e["name"]}
-                for e in namespaces
-            },
+            "total_card_chars": total_card_chars,
+            "total_timeline_count": total_timeline_count,
+            "total_topic_count": total_topic_count,
+            "cards": cards_info,
         }
 
     # ── 内部：注册表读写 ──────────────────────────────────────
@@ -396,12 +837,10 @@ class NamespaceManager:
         return {"version": 1, "namespaces": []}
 
     def _write_registry(self, data: Dict[str, Any]) -> None:
-        self.dir.mkdir(parents=True, exist_ok=True)
-        tmp = self.registry_file.with_suffix(".json.tmp")
-        tmp.write_text(
-            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+        _atomic_write_text(
+            self.registry_file,
+            json.dumps(data, ensure_ascii=False, indent=2),
         )
-        tmp.replace(self.registry_file)
 
 
 def normalize_refiner_scope(raw: Any) -> str:
@@ -423,7 +862,7 @@ def normalize_refiner_scope(raw: Any) -> str:
 
 
 # 会话前 N 条消息内允许自动绑定（超出视为"会话已定型"，不再抢切）
-AUTOBIND_MAX_MESSAGES = 4
+AUTOBIND_MAX_MESSAGES = 12
 
 
 def autobind_project(session: Any, manager: "NamespaceManager", text: str) -> Optional[str]:
@@ -433,14 +872,11 @@ def autobind_project(session: Any, manager: "NamespaceManager", text: str) -> Op
     1. 命名空间模式已启用；
     2. 会话未绑定（project_namespace 为空）；
     3. 会话尚在开篇（message_count <= AUTOBIND_MAX_MESSAGES）；
-    4. 用户消息命中某项目的 name/alias（确定性子串匹配，不调 LLM）。
+    4. 用户消息命中某项目的 name/alias（确定性最长子串匹配，不调 LLM）。
 
     命中即持久化绑定（set_project_namespace），后续轮次不再重判；
     未命中/条件不符返回 None（全局视角 + 项目索引兜底）。
-    误绑的修正出口：输入栏项目选择器手动改。
-
-    session 需要 duck-type 提供：project_namespace / message_count /
-    set_project_namespace()。绑定失败静默返回 None，绝不阻塞主链路。
+    误绑的修正出口：记忆浏览器内调整或对话调用 set_project_binding。
     """
     try:
         if not manager.is_active():
@@ -474,6 +910,28 @@ def _tail(text: str, max_chars: int) -> str:
     return f"（更早内容已截断）\n{cut}"
 
 
+def _truncate_card(card: str, max_chars: int) -> str:
+    """状态卡保头保尾裁剪：避免超长时把标题和 `### 当前状态` 切丢。"""
+    if len(card) <= max_chars:
+        return card
+    marker = "\n\n（中间部分已省略）\n\n"
+    usable = max(200, max_chars - len(marker))
+    head_budget = max(120, int(usable * 0.4))
+    tail_budget = max(80, usable - head_budget)
+
+    head = card[:head_budget]
+    last_nl = head.rfind("\n")
+    if last_nl > head_budget // 2:
+        head = head[:last_nl]
+
+    tail = card[-tail_budget:]
+    first_nl = tail.find("\n")
+    if 0 < first_nl < len(tail) // 2:
+        tail = tail[first_nl + 1:]
+
+    return head.rstrip() + marker + tail.lstrip()
+
+
 def _has_substantive_content(card: str) -> bool:
     """卡片是否含实际内容（剔除标题/HTML 注释/模板骨架后仍有正文）。
     新建项目的空模板卡不值得占注入预算。"""
@@ -490,6 +948,9 @@ __all__ = [
     "NamespaceManager",
     "slugify_namespace_id",
     "normalize_refiner_scope",
+    "autobind_project",
+    "extract_card_summary",
     "CARD_MAX_CHARS",
     "GLOBAL_MAX_CHARS",
+    "AUTOBIND_MAX_MESSAGES",
 ]

@@ -48,6 +48,11 @@ def _resolve_runtime_model_id(
     """
     if requested_model:
         return requested_model
+    try:
+        from .llm_call_config import resolve_call_model_config
+        return resolve_call_model_config(agent_id=agent_id, session=session).model
+    except Exception:
+        pass
     session_model = getattr(session, "model", None) if session else None
     if session_model:
         return session_model

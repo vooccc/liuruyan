@@ -10,8 +10,8 @@ import {
   getReflections, getTempStats, getMemoryReport,
   saveReflections, deleteReflectionItem,
   listSessionsByAgent, getSession,
-  listNamespaces,
-  Session, Message,
+  listNamespaces, setSessionProject,
+  Session, Message, ProjectNamespace,
 } from '../api/chat'
 import { Agent } from '../api/chat'
 import { useAlertDialog, useConfirmDialog } from './ConfirmDialog'
@@ -36,6 +36,15 @@ interface MemoryReport {
   conversation_history_tokens: number
   conversation_history_messages: number
   total_tokens_estimate: number
+  namespaces?: {
+    active?: boolean
+    total_projects?: number
+    active_projects?: number
+    archived_projects?: number
+    global_chars?: number
+    total_card_chars?: number
+    total_timeline_entries?: number
+  }
 }
 
 interface MemoryPanelProps {
@@ -43,9 +52,16 @@ interface MemoryPanelProps {
   agentId?: string
   agents?: Agent[]
   standalone?: boolean
+  currentSessionId?: string
 }
 
-export default function MemoryPanel({ onClose, agentId: initialAgentId, agents, standalone = false }: MemoryPanelProps) {
+export default function MemoryPanel({
+  onClose,
+  agentId: initialAgentId,
+  agents,
+  standalone = false,
+  currentSessionId,
+}: MemoryPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>('sessions')
   const [viewAgentId, setViewAgentId] = useState(initialAgentId || 'default')
   const [dropdownOpen, setDropdownOpen] = useState(false)
@@ -54,6 +70,9 @@ export default function MemoryPanel({ onClose, agentId: initialAgentId, agents, 
   // v5 记忆分层：该角色是否已启用项目命名空间。启用后 MEMORY.md 冻结为归档
   // （注入层不读、refiner 不写），「长期记忆」tab 降级为归档查看器。
   const [nsActive, setNsActive] = useState(false)
+  const [namespaces, setNamespaces] = useState<ProjectNamespace[]>([])
+  const [sessionProjectFilter, setSessionProjectFilter] = useState<string>('all')
+  const [bindingSession, setBindingSession] = useState(false)
   // 会话浏览器（v4 取代旧 diaries tab）
   const [sessionList, setSessionList] = useState<Session[]>([])
   const [sessionListLoading, setSessionListLoading] = useState(false)
@@ -107,9 +126,11 @@ export default function MemoryPanel({ onClose, agentId: initialAgentId, agents, 
       setReflections(ref.content)
       setSessionList(sessions)
       setNsActive(Boolean(nsList?.active))
+      setNamespaces(nsList?.namespaces || [])
       // 切换角色时重置选中 session 和统计
-      setSelectedSessionId(null)
+      setSelectedSessionId(currentSessionId && sessions.some(s => s.id === currentSessionId) ? currentSessionId : null)
       setSelectedSessionMessages([])
+      setSessionProjectFilter('all')
       setTempStats(null)
       setMemReport(null)
     } catch {}
@@ -129,11 +150,47 @@ export default function MemoryPanel({ onClose, agentId: initialAgentId, agents, 
   async function refreshSessions() {
     setSessionListLoading(true)
     try {
-      const sessions = await listSessionsByAgent(viewAgentId)
+      const [sessions, nsList] = await Promise.all([
+        listSessionsByAgent(viewAgentId),
+        listNamespaces(viewAgentId).catch(() => null),
+      ])
       setSessionList(sessions)
+      if (nsList) {
+        setNsActive(Boolean(nsList.active))
+        setNamespaces(nsList.namespaces || [])
+      }
     } catch {}
     setSessionListLoading(false)
   }
+
+  async function handleChangeSessionProject(sessionId: string, projectNs: string | null) {
+    setBindingSession(true)
+    try {
+      await setSessionProject(sessionId, projectNs, viewAgentId)
+      await refreshSessions()
+    } catch (e) {
+      await alertAction(`切换项目绑定失败: ${(e as Error).message || e}`)
+    }
+    setBindingSession(false)
+  }
+
+  const namespaceNameMap = new Map(namespaces.map(ns => [ns.id, ns.name]))
+  const activeNamespaces = namespaces.filter(ns => ns.status !== 'archived')
+  const filteredSessions = sessionList
+    .filter(s => {
+      if (sessionProjectFilter === 'all') return true
+      if (sessionProjectFilter === 'unbound') return !s.project_namespace
+      return s.project_namespace === sessionProjectFilter
+    })
+    .slice()
+    .sort((a, b) => {
+      if (currentSessionId) {
+        if (a.id === currentSessionId) return -1
+        if (b.id === currentSessionId) return 1
+      }
+      return 0
+    })
+  const selectedSessionMeta = selectedSessionId ? sessionList.find(s => s.id === selectedSessionId) : undefined
 
   async function loadSession(sessionId: string) {
     setSelectedSessionId(sessionId)
@@ -297,7 +354,11 @@ export default function MemoryPanel({ onClose, agentId: initialAgentId, agents, 
           )}
 
           {activeTab === 'projects' && (
-            <NamespaceProjectsView agentId={viewAgentId} />
+            <NamespaceProjectsView
+              agentId={viewAgentId}
+              currentSessionId={currentSessionId}
+              onSessionsChanged={refreshSessions}
+            />
           )}
 
           {activeTab === 'sessions' && (
@@ -310,40 +371,100 @@ export default function MemoryPanel({ onClose, agentId: initialAgentId, agents, 
                     <RefreshCw size={12} style={{ display: 'inline', marginRight: 3 }} />
                   </button>
                 </div>
-                {sessionList.map(s => (
-                  <button
-                    key={s.id}
-                    className={`diary-item ${selectedSessionId === s.id ? 'active' : ''}`}
-                    onClick={() => loadSession(s.id)}
-                    title={`${s.title} · ${s.messageCount} 条 · ${formatTimeStamp(s.updatedAt)}`}
+                {nsActive && (
+                  <select
+                    className="session-project-filter"
+                    value={sessionProjectFilter}
+                    onChange={e => setSessionProjectFilter(e.target.value)}
+                    title="按项目归属筛选会话"
                   >
-                    <ChevronRight size={14} className="chevron" />
-                    <div className="session-item-meta" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, overflow: 'hidden' }}>
-                      <span style={{ fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{s.title || '无标题'}</span>
-                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                        {s.messageCount} 条 · {formatTimeStamp(s.updatedAt)}
-                      </span>
-                    </div>
-                  </button>
-                ))}
-                {sessionList.length === 0 && !sessionListLoading && <p className="empty-hint">暂无会话</p>}
+                    <option value="all">全部会话 ({sessionList.length})</option>
+                    <option value="unbound">未绑定项目</option>
+                    {namespaces.map(ns => (
+                      <option key={ns.id} value={ns.id}>
+                        {ns.name}{ns.status === 'archived' ? '（已归档）' : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {filteredSessions.map(s => {
+                  const boundName = s.project_namespace
+                    ? (namespaceNameMap.get(s.project_namespace) || s.project_namespace)
+                    : null
+                  const isCurrent = Boolean(currentSessionId && s.id === currentSessionId)
+                  return (
+                    <button
+                      key={s.id}
+                      className={`diary-item ${selectedSessionId === s.id ? 'active' : ''} ${isCurrent ? 'is-current' : ''}`}
+                      onClick={() => loadSession(s.id)}
+                      title={`${s.title} · ${s.messageCount} 条 · ${formatTimeStamp(s.updatedAt)}`}
+                    >
+                      <ChevronRight size={14} className="chevron" />
+                      <div className="session-item-meta" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, overflow: 'hidden', width: '100%' }}>
+                        <div className="session-item-title-row">
+                          <span className="session-item-title">{s.title || '无标题'}</span>
+                          {isCurrent && <span className="session-current-tag">当前</span>}
+                        </div>
+                        <div className="session-item-sub-row">
+                          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                            {s.messageCount} 条 · {formatTimeStamp(s.updatedAt)}
+                          </span>
+                          {boundName && (
+                            <span className="session-project-pill" title={`归属项目：${boundName}`}>
+                              {boundName}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  )
+                })}
+                {filteredSessions.length === 0 && !sessionListLoading && <p className="empty-hint">暂无匹配会话</p>}
                 {sessionListLoading && <p className="empty-hint">加载中…</p>}
               </div>
 
               {/* 会话内容 */}
               <div className="diary-detail">
                 {selectedSessionId ? (
-                  selectedSessionLoading ? (
-                    <div className="empty-state"><MessageSquare size={32} /><p>加载中…</p></div>
-                  ) : selectedSessionMessages.length === 0 ? (
-                    <div className="empty-state"><MessageSquare size={32} /><p>该会话无消息</p></div>
-                  ) : (
-                    <div className="session-transcript">
-                      {selectedSessionMessages.map((m, idx) => (
-                        <SessionTranscriptRow key={idx} message={m} agents={agents} />
-                      ))}
-                    </div>
-                  )
+                  <>
+                    {nsActive && selectedSessionMeta && (
+                      <div className="session-detail-project-bar">
+                        <span className="session-detail-title" title={selectedSessionMeta.title || selectedSessionMeta.id}>
+                          {selectedSessionMeta.title || '无标题会话'}
+                        </span>
+                        <label className="session-detail-bind">
+                          <span>归属项目：</span>
+                          <select
+                            value={selectedSessionMeta.project_namespace || ''}
+                            disabled={bindingSession}
+                            onChange={e => void handleChangeSessionProject(selectedSessionId, e.target.value || null)}
+                          >
+                            <option value="">未绑定（全局视角）</option>
+                            {activeNamespaces.map(ns => (
+                              <option key={ns.id} value={ns.id}>{ns.name}</option>
+                            ))}
+                            {selectedSessionMeta.project_namespace &&
+                              !activeNamespaces.some(ns => ns.id === selectedSessionMeta.project_namespace) && (
+                                <option value={selectedSessionMeta.project_namespace}>
+                                  {namespaceNameMap.get(selectedSessionMeta.project_namespace) || selectedSessionMeta.project_namespace}（已归档）
+                                </option>
+                              )}
+                          </select>
+                        </label>
+                      </div>
+                    )}
+                    {selectedSessionLoading ? (
+                      <div className="empty-state"><MessageSquare size={32} /><p>加载中…</p></div>
+                    ) : selectedSessionMessages.length === 0 ? (
+                      <div className="empty-state"><MessageSquare size={32} /><p>该会话无消息</p></div>
+                    ) : (
+                      <div className="session-transcript">
+                        {selectedSessionMessages.map((m, idx) => (
+                          <SessionTranscriptRow key={idx} message={m} agents={agents} />
+                        ))}
+                      </div>
+                    )}
+                  </>
                 ) : (
                   <div className="empty-state">
                     <MessageSquare size={32} />
@@ -564,6 +685,15 @@ export default function MemoryPanel({ onClose, agentId: initialAgentId, agents, 
                         </div>
                       ))}
                       <div className="report-summary">
+                        {memReport.namespaces?.active && (
+                          <div className="report-summary-row">
+                            <span>项目档案</span>
+                            <span>
+                              {memReport.namespaces.active_projects || 0} 活跃 / {memReport.namespaces.archived_projects || 0} 归档 ·{' '}
+                              {memReport.namespaces.total_timeline_entries || 0} 条时间线
+                            </span>
+                          </div>
+                        )}
                         <div className="report-summary-row">
                           <span>对话历史</span>
                           <span>{memReport.conversation_history_messages || 0} 条 / {memReport.conversation_history_tokens || 0} tok</span>
