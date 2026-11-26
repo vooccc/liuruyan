@@ -78,12 +78,10 @@ interface ChatProps {
   agents?: Agent[]
   onSessionCreated?: (session: Session) => void
   onLoadingChange?: (sessionId: string | null, loading: boolean) => void
-  /** 跳到「设置 → 权限」并定位当前角色（toolbar「权限」按钮触发） */
-  onJumpToPermissions?: (agentId: string | null) => void
 }
 
 const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
-  { currentSession, currentAgentId, backendOnline = true, agents: agentsProp, onSessionCreated, onLoadingChange, onJumpToPermissions }: ChatProps,
+  { currentSession, currentAgentId, backendOnline = true, agents: agentsProp, onSessionCreated, onLoadingChange }: ChatProps,
   ref,
 ) {
   // Stage B-1 / C-2 / D：messages 走 store selector。store sessions[sid].chatMessages
@@ -289,12 +287,6 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     activeAgentId: currentAgentId ?? null,
     activeSession: currentSession ?? null,
   })
-
-  // 权限：toolbar「权限」按钮直接跳设置（详细面板在 设置 → 权限 tab）
-  // 运行预算入口已迁到 设置 → 运行预算 tab
-  const handleOpenPermissions = useCallback(() => {
-    onJumpToPermissions?.(currentAgentId ?? null)
-  }, [onJumpToPermissions, currentAgentId])
 
   const getMessageSourceAgent = useCallback((message: MessageType) => {
     if (message.role !== 'assistant') return null
@@ -583,8 +575,7 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
 
   // ==== 编辑并重发（v6.1 内联编辑器「发送」，合并原「修改并重新提问」按钮）====
   // 位置约束：必须在 useChatSubmitFlow 之后（performMarkedTruncate 依赖其返回的
-  //   refreshSessionState），又必须在 useChatInteractions 之前
-  //   （handleClearHistoryWithMark 消费 clearEditMark）。
+  //   refreshSessionState）。
   // 交互：user 消息上的编辑按钮打开内联编辑器（取消/保存/发送）。「发送」=
   //   截断此条之后的所有对话 + 以编辑后的文本重发（原样发送 = 重新生成）。
   //   截断动作复用 onBeforeSend 钩子 —— 在发送流程所有防抖/锁/空文本等 bail
@@ -776,7 +767,6 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
   }, [currentSession?.id, handleEnsureSession, mention])
 
   const {
-    handleClearHistory,
     handleKeyDown: rawHandleKeyDown,
     selectCommand,
     handleInputChange,
@@ -786,14 +776,11 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     handleSendCorridor,
   } = useChatInteractions({
     input,
-    currentSession,
     currentAgentId,
     inputRef,
     corridorTarget,
     corridorContent,
-    confirmAction,
     handleSubmit,
-    setTimelineItems,
     setInput,
     setShowCommands,
     setShowCorridorPanel,
@@ -802,12 +789,6 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
     setCorridorSending,
     setShowModelPicker,
   })
-
-  // 清空历史会移除包括编辑重发标记目标在内的所有消息 → 一并清标记防高亮悬空
-  const handleClearHistoryWithMark = useCallback(async () => {
-    await handleClearHistory()
-    clearEditMark()
-  }, [handleClearHistory, clearEditMark])
 
   // 包一层：mention dropdown 打开时拦截方向键/回车交给它，否则放行原 handler。
   const handleKeyDown = useCallback((e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1064,10 +1045,8 @@ const Chat = forwardRef<ChatHandle, ChatProps>(function Chat(
             onSelectCustomModel={switchCustomModel}
             onOpenModelSettings={openModelSettings}
             onSelectInputMode={setSelectedInputMode}
-            onClearHistory={handleClearHistoryWithMark}
             onStop={handleStop}
             onSubmit={handleSubmit}
-            onOpenGuardianDialog={handleOpenPermissions}
             onVoiceTranscription={handleVoiceTranscription}
             onVoiceError={handleVoiceError}
             onVoiceDraft={handleVoiceDraft}

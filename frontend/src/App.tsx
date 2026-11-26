@@ -282,15 +282,8 @@ function AppInner() {
     localStorage.setItem('primaryView', primaryView)
   }, [primaryView])
 
-  // 设置页跳转上下文：从主聊天点「权限」时定位到 permissions tab + 当前 agent。
-  // 切回非 settings 后清空，避免下次开设置又被锚定。
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab | undefined>(undefined)
   const [settingsFocusAgentId, setSettingsFocusAgentId] = useState<string | null>(null)
-  const handleJumpToPermissions = (agentId: string | null) => {
-    setSettingsInitialTab('permissions')
-    setSettingsFocusAgentId(agentId)
-    setPrimaryView('settings')
-  }
 
   // 全局跳设置入口：任意组件 dispatch `lry:open-settings`（detail: {tab, agentId}）
   // 即可定位到设置页对应 tab。目前消费者：SessionTokenUsageBadge 的"工具定义偏高"提示。
@@ -1102,7 +1095,6 @@ function AppInner() {
               agents={agents}
               onSessionCreated={(session) => persistAndSetSession(session)}
               onLoadingChange={handleLoadingChange}
-              onJumpToPermissions={handleJumpToPermissions}
             />
           </div>
 

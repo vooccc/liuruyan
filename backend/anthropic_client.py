@@ -19,8 +19,6 @@ except ImportError:
     HAS_ANTHROPIC = False
 
 from .tools import get_tool_registry
-from .runtime_budget import AggregateRuntimeBudget
-from .runtime_schedule import build_budget_convergence_plan
 from .tool_id_contract import ensure_tool_id
 from .tool_loop_guard import (
     ToolLoopGuard,
@@ -392,7 +390,11 @@ class AnthropicClient:
 
         api_client = self._get_api_client()
         from liuruyan.llm import CoreRequest, RequestContext
-        from .runtime_budget import get_effective_max_output_tokens, get_effective_stream_idle_timeout
+        from .llm_stream_utils import (
+            get_effective_max_output_tokens,
+            get_effective_stream_idle_timeout,
+            iter_stream_with_idle_timeout,
+        )
 
         req_extras: Dict[str, Any] = {}
         if prompt_cache_info:
@@ -421,8 +423,7 @@ class AnthropicClient:
         # chunk-level idle timeout —— 必须用 wait_for 包 __anext__，不能在
         # async for 循环体内打 last_heartbeat 时间差判断（那种写法在上游静默
         # 挂死时无法触发，详见 backend/llm_stream_utils.py 文件头注释）。
-        # P3-stream-timeout-cfg：从 runtime_budget.json 读。
-        from .llm_stream_utils import iter_stream_with_idle_timeout
+        # P3-stream-timeout-cfg
         timeout = get_effective_stream_idle_timeout("anthropic")
 
         try:
@@ -621,9 +622,11 @@ class AnthropicClient:
         if prompt_cache_info:
             req_extras["prompt_cache_info"] = prompt_cache_info
 
-        # P3-max-tokens-cfg：从 runtime_budget.json 读 max_output_tokens，让用户在
-        # "预算"对话框里能调。老默认 8192 向后兼容（未配置时走 env → 默认）。
-        from .runtime_budget import get_effective_max_output_tokens, get_effective_stream_idle_timeout
+        from .llm_stream_utils import (
+            get_effective_max_output_tokens,
+            get_effective_stream_idle_timeout,
+            iter_stream_with_idle_timeout,
+        )
         core_req = CoreRequest(
             messages=chat_messages,
             system=system_param,
@@ -639,8 +642,7 @@ class AnthropicClient:
         )
 
         # chunk-level idle timeout helper：详见 backend/llm_stream_utils.py
-        # P3-stream-timeout-cfg：从 runtime_budget.json 读。
-        from .llm_stream_utils import iter_stream_with_idle_timeout
+        # P3-stream-timeout-cfg
         timeout = get_effective_stream_idle_timeout("anthropic")
 
         # 内层重试：只对未 yield 过有用事件的网络错误重试（round_yielded_useful 锁）
@@ -1045,19 +1047,32 @@ class AnthropicClient:
             # Tool registry already returns Anthropic-native format
             anthropic_tools = tools
 
-        # v2 C2-b：last_heartbeat / timeout / inner retry / stream 累积等
-        # 单轮局部状态全部搬到 _chat_one_round 内部管理。
-        # 这里只保留循环外决策需要的 guard / budget。
         guard = ToolLoopGuard.from_env("anthropic")
-        budget = AggregateRuntimeBudget.from_env("anthropic")
-        for round_num in range(guard.max_rounds):
-            stop = budget.observe_before_round()
-            if stop:
-                final_response = await self._finalize_after_tool_loop(system_prompt, chat_messages, stop)
-                yield build_tool_loop_notice_event(stop)
-                yield {"type": "content", "text": final_response}
-                return
+        round_num = -1
+        while True:
+            round_num += 1
+            if guard.max_rounds is not None and round_num >= guard.max_rounds:
+                break
             try:
+                from .memory_manager import maybe_microcompact_mid_turn, resolve_active_context_length
+
+                _sys_txt = system_param if isinstance(system_param, str) else ""
+                _mc = maybe_microcompact_mid_turn(
+                    chat_messages,
+                    system_text=_sys_txt,
+                    context_length=resolve_active_context_length(self.model),
+                )
+                if _mc is not None:
+                    logger.info(
+                        "[anthropic_client] mid-turn microcompact applied (round=%s level=%s pre=%s post=%s saved=%s)",
+                        round_num,
+                        _mc.level,
+                        _mc.pre_tokens,
+                        _mc.post_tokens,
+                        _mc.tokens_saved,
+                    )
+                    chat_messages = _mc.messages
+
                 # v2 C2-b：调 _chat_one_round 跑单轮（_chat_one_round 内部含
                 # inner retry / stream 累积 / token usage / 工具 dispatch）
                 # _chat_one_round 不修改 chat_messages — 通过末尾 _round_done 事件
@@ -1147,34 +1162,10 @@ class AnthropicClient:
                     yield {"type": "content", "text": final_response}
                     return
 
-                stop = budget.observe_tool_batch(
-                    round_done["executed_tool_calls"],
-                    round_done["executed_tool_results"],
-                )
-                if stop:
-                    final_response = await self._finalize_after_tool_loop(system_prompt, chat_messages, stop)
-                    yield build_tool_loop_notice_event(stop)
-                    yield {"type": "content", "text": final_response}
-                    return
-
-                convergence = build_budget_convergence_plan(budget)
-                if convergence:
-                    if stream:
-                        yield {
-                            "type": "system_notice",
-                            "kind": convergence.notice_kind,
-                            "content": convergence.notice_message,
-                            "payload": convergence.notice_payload,
-                        }
-                    # 把 convergence prompt 加到刚 append 的 tool_result_msg.content
-                    tool_result_message = chat_messages[-1]
-                    tool_result_message["content"] = list(tool_result_message["content"]) + [
-                        {"type": "text", "text": convergence.prompt_message}
-                    ]
                 # 多模态延迟图像分块投递机制
                 # 让模型在新一轮看到 image-in-user-message 合法位置（避免被反代
                 # tool_result 路径吃图）。messages 末尾顺序：[..., assistant,
-                # tool_result_user(可能含 convergence prompt), image_user]。
+                # tool_result_user, image_user]。
                 if _pending_image_user_msg is not None:
                     chat_messages.append(_pending_image_user_msg)
                 continue  # 继续下一轮

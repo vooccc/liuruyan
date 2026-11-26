@@ -762,8 +762,13 @@ def slim_history_tool_results(
                 out.append(entry)
             continue
 
+        role = entry.get("role")
+        if role == "system":
+            out.append(entry)
+            continue
+
         # 0. 兼容 assistant 角色：Tier 3 全量脱水；Tier 2 仅当单条工具入参超预算时脱水
-        if entry.get("role") == "assistant":
+        if role == "assistant":
             if tier == 2 and (
                 max_tier2_tool_use_tokens <= 0
                 or _estimate_tool_use_payload_tokens(entry) <= max_tier2_tool_use_tokens
@@ -774,7 +779,7 @@ def slim_history_tool_results(
             continue
 
         # 1. 兼容 OpenAI 格式：{"role": "tool", "content": "..."}
-        if entry.get("role") == "tool":
+        if role == "tool":
             tr = entry.get("content", "")
             if isinstance(tr, str):
                 slimmed = _microcompact_tool_result_text(tr, tier, max_result_tokens)
@@ -787,6 +792,149 @@ def slim_history_tool_results(
         # 2. 兼容 Anthropic v3 格式：{"role": "user", "content": [{"type": "tool_result", ...}]}
         out.append(_slim_user_tool_result_entry(entry, tier, max_result_tokens, max_tier2_message_tokens))
     return out
+
+
+@dataclass(frozen=True)
+class MidTurnMicrocompactResult:
+    """工具循环单步前的轻量微压缩结果（仅作用于发给模型的在途消息副本）。"""
+
+    messages: List[Dict[str, Any]]
+    pre_tokens: int
+    post_tokens: int
+    tokens_saved: int
+    threshold_tokens: int
+    level: int
+
+
+def resolve_active_context_length(fallback_model: Optional[str] = None) -> Optional[int]:
+    """解析当前活跃调用上下文窗口（复用 ContextVar，避免客户端与 Agent 逻辑漂移）。"""
+    try:
+        from .llm_client import _active_call_config_var
+        from .providers.capabilities import infer_context_length
+
+        cc = _active_call_config_var.get()
+        if cc is not None:
+            if getattr(cc, "context_length", None):
+                return cc.context_length
+            if getattr(cc, "model", None):
+                return infer_context_length(cc.model)
+        if fallback_model:
+            return infer_context_length(fallback_model)
+    except Exception:
+        pass
+    return None
+
+
+def _has_tool_invocations(msg: Dict[str, Any]) -> bool:
+    if msg.get("tool_calls"):
+        return True
+    content = msg.get("content")
+    if isinstance(content, list):
+        return any(
+            isinstance(block, dict) and block.get("type") == "tool_use"
+            for block in content
+        )
+    return False
+
+
+def _count_protect_tail_for_rounds(
+    body: List[Dict[str, Any]],
+    keep_rounds: int,
+    min_messages: int,
+) -> int:
+    """按完整工具调用轮次自后向前计算保护尾部条数，避免切断并发 tool_calls 批处理。"""
+    if not body:
+        return 0
+    rounds_found = 0
+    for idx in range(len(body) - 1, -1, -1):
+        msg = body[idx]
+        if msg.get("role") == "assistant" and _has_tool_invocations(msg):
+            rounds_found += 1
+            if rounds_found >= keep_rounds:
+                return max(len(body) - idx, min_messages)
+    return len(body)
+
+
+def maybe_microcompact_mid_turn(
+    messages: List[Dict[str, Any]],
+    *,
+    system_text: str = "",
+    context_length: Optional[int] = None,
+    min_token_savings: int = 512,
+) -> Optional[MidTurnMicrocompactResult]:
+    """对齐 交互式规范MidTurn 策略：平时不动前缀保缓存，达压线阈值时再对在途副本做 0-LLM 微压缩。"""
+    if not messages:
+        return None
+
+    sys_end = 0
+    while sys_end < len(messages) and messages[sys_end].get("role") == "system":
+        sys_end += 1
+    leading_sys = messages[:sys_end]
+    body = messages[sys_end:]
+    if len(body) < 3:
+        return None
+
+    warning_threshold, overflow_threshold = resolve_conversation_thresholds(context_length)
+    microcompact_threshold = max(warning_threshold, int(overflow_threshold * 0.90))
+
+    body_tokens = estimate_history_tokens(body)
+    sys_tokens = estimate_tokens(system_text) + estimate_history_tokens(leading_sys)
+    total_tokens = sys_tokens + body_tokens
+
+    window_pressure = (
+        isinstance(context_length, int)
+        and context_length > 0
+        and total_tokens >= int(context_length * 0.85)
+    )
+    if body_tokens < microcompact_threshold and not window_pressure:
+        return None
+
+    # Level 1：保护最近 2 轮完整工具批（或至少 4 条），更早轮次进入阶梯瘦身/清空
+    protect_l1 = _count_protect_tail_for_rounds(body, keep_rounds=2, min_messages=HISTORY_SLIM_PROTECT_RECENT)
+    slimmed_body = slim_history_tool_results(
+        body,
+        max_result_tokens=HISTORY_TOOL_RESULT_MAX_TOKENS,
+        protect_recent=protect_l1,
+        intermediate_recent=protect_l1 + 6,
+    )
+    post_body_tokens = estimate_history_tokens(slimmed_body)
+    level = 1
+
+    # Level 2：若一级微压缩后仍越过 overflow 红线（或物理窗口逼满），仅留最新 1 轮原文并收紧中间窗口
+    still_over_window = (
+        isinstance(context_length, int)
+        and context_length > 0
+        and (sys_tokens + post_body_tokens) >= int(context_length * 0.90)
+    )
+    if post_body_tokens >= overflow_threshold or still_over_window:
+        protect_l2 = _count_protect_tail_for_rounds(body, keep_rounds=1, min_messages=2)
+        aggressive_body = slim_history_tool_results(
+            body,
+            max_result_tokens=800,
+            protect_recent=protect_l2,
+            intermediate_recent=protect_l2 + 2,
+            max_tier2_message_tokens=4_000,
+            max_tier2_tool_use_tokens=3_000,
+        )
+        aggressive_tokens = estimate_history_tokens(aggressive_body)
+        if aggressive_tokens < post_body_tokens:
+            slimmed_body = aggressive_body
+            post_body_tokens = aggressive_tokens
+            level = 2
+
+    tokens_saved = body_tokens - post_body_tokens
+    effective_min_savings = 1 if level == 2 else min_token_savings
+    if tokens_saved < effective_min_savings:
+        return None
+
+    return MidTurnMicrocompactResult(
+        messages=list(leading_sys) + slimmed_body,
+        pre_tokens=body_tokens,
+        post_tokens=post_body_tokens,
+        tokens_saved=tokens_saved,
+        threshold_tokens=microcompact_threshold,
+        level=level,
+    )
 
 
 def _estimate_json_value_tokens(val: Any) -> int:

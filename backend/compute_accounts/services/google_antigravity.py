@@ -55,13 +55,22 @@ _ENDPOINT_COOLDOWNS: Dict[str, float] = {}  # endpoint -> cooldown_expire_timest
 _DEFAULT_COOLDOWN_SECONDS: float = 300.0     # 5 分钟常规网络/鉴权异常避让期
 _QUOTA_429_COOLDOWN_SECONDS: float = 30.0    # 30 秒 429 配额限流避让期（短周期退避，避免瞬时并发限流导致节点被长期锁定）
 
+# Google Antigravity 官方 Hub 出站 User-Agent 基线（需匹配 Hub 指纹才能解锁 Gemini 4 系列正式目录与调用权限）
+ANTIGRAVITY_HUB_VERSION = "2.33.0"
+ANTIGRAVITY_USER_AGENT = (
+    f"antigravity/hub/{ANTIGRAVITY_HUB_VERSION} "
+    "(aidev_client; os_type=windows; arch=amd64; cl=1023160026)"
+)
+
 # Google Antigravity 原生模型目录清单（严格与官方 Antigravity IDE 对齐）
-# 包含 7 大系列、14 款思考分级模型；Gemini 3.1 Pro 严格仅提供 High 和 Low
+# 包含 Gemini 4 Hydrogen (XHigh/High/Medium/Low/Sonar)、Gemini 3.x、Claude 4.6 及 GPT-OSS
 ANTIGRAVITY_MODELS: List[Dict[str, Any]] = [
-    # --- 0. Gemini 4 Hydrogen (High, Medium, Low) - 日常帮助 ---
+    # --- 0. Gemini 4 Hydrogen (XHigh, High, Medium, Low, Sonar) ---
+    {"id": "gemini-4-hydrogen-xhigh", "name": "Gemini 4 Hydrogen (XHigh)", "context_window": 1048576, "vision": True, "tools": True},
     {"id": "gemini-4-hydrogen-high", "name": "Gemini 4 Hydrogen (High)", "context_window": 1048576, "vision": True, "tools": True},
     {"id": "gemini-4-hydrogen-medium", "name": "Gemini 4 Hydrogen (Medium)", "context_window": 1048576, "vision": True, "tools": True},
     {"id": "gemini-4-hydrogen-low", "name": "Gemini 4 Hydrogen (Low)", "context_window": 1048576, "vision": True, "tools": True},
+    {"id": "gemini-4-hydrogen-sonar", "name": "Gemini 4 Hydrogen Sonar (轻量低耗)", "context_window": 1048576, "vision": True, "tools": True},
 
     # --- 0.1 Gemini 3.5 Flash-Lite - 快速解答 ---
     {"id": "gemini-3.5-flash-lite", "name": "Gemini 3.5 Flash-Lite", "context_window": 1048576, "vision": True, "tools": True},
@@ -382,9 +391,9 @@ class GoogleAntigravityAdapter(BaseAccountAdapter):
             cloudcode_headers = {
                 "Authorization": f"Bearer {access_token}",
                 "Content-Type": "application/json",
-                "User-Agent": "antigravity/2.9.1 windows/amd64",
+                "User-Agent": ANTIGRAVITY_USER_AGENT,
             }
-            assist_payload = {"metadata": {"ideType": "ANTIGRAVITY", "ideVersion": "2.9.1"}}
+            assist_payload = {"metadata": {"ideType": "ANTIGRAVITY", "ideVersion": ANTIGRAVITY_HUB_VERSION}}
             for ep in ("https://daily-cloudcode-pa.googleapis.com",):
                 try:
                     cresp = await client.post(f"{ep}/v1internal:loadCodeAssist", headers=cloudcode_headers, json=assist_payload)
@@ -424,14 +433,14 @@ class GoogleAntigravityAdapter(BaseAccountAdapter):
         headers = {
             "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json",
-            "User-Agent": "antigravity/2.9.1 windows/amd64",
+            "User-Agent": ANTIGRAVITY_USER_AGENT,
         }
         body = {"project": project_id or "aicode-consumers"}
         proxy = _detect_antigravity_proxy()
 
         endpoints = [
-            "https://cloudcode-pa.googleapis.com",
             "https://daily-cloudcode-pa.googleapis.com",
+            "https://cloudcode-pa.googleapis.com",
         ]
 
         raw_data = None
@@ -481,6 +490,8 @@ class GoogleAntigravityAdapter(BaseAccountAdapter):
 
         for mid in recommended_ids:
             meta = models_dict.get(mid, {}) if isinstance(models_dict, dict) else {}
+            if mid.endswith("-disabled") or meta.get("disabled"):
+                continue
             display_name = meta.get("displayName")
             if not display_name:
                 display_name = mid.replace("-", " ").title()
@@ -501,11 +512,13 @@ class GoogleAntigravityAdapter(BaseAccountAdapter):
                 "recommended": True,
             })
 
-        # 优先前置 Gemini 4 Hydrogen 与 3.5 Flash-Lite 系列模型
+        # 补充推荐中未列出的官方可用模型（如 XHigh、低消耗 Sonar 与 3.5 Flash-Lite）
         hydrogen_entries = [
+            {"id": "gemini-4-hydrogen-xhigh", "name": "Gemini 4 Hydrogen (XHigh)", "context_window": 1048576, "vision": True, "tools": True, "recommended": True},
             {"id": "gemini-4-hydrogen-high", "name": "Gemini 4 Hydrogen (High)", "context_window": 1048576, "vision": True, "tools": True, "recommended": True},
             {"id": "gemini-4-hydrogen-medium", "name": "Gemini 4 Hydrogen (Medium)", "context_window": 1048576, "vision": True, "tools": True, "recommended": True},
             {"id": "gemini-4-hydrogen-low", "name": "Gemini 4 Hydrogen (Low)", "context_window": 1048576, "vision": True, "tools": True, "recommended": True},
+            {"id": "gemini-4-hydrogen-sonar", "name": "Gemini 4 Hydrogen Sonar (轻量低耗)", "context_window": 1048576, "vision": True, "tools": True, "recommended": True},
             {"id": "gemini-3.5-flash-lite", "name": "Gemini 3.5 Flash-Lite", "context_window": 1048576, "vision": True, "tools": True, "recommended": True},
         ]
         existing_ids = {m["id"] for m in parsed_models}
@@ -557,7 +570,7 @@ class GoogleAntigravityAdapter(BaseAccountAdapter):
         headers = {
             "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json",
-            "User-Agent": "antigravity/2.9.1 windows/amd64",
+            "User-Agent": ANTIGRAVITY_USER_AGENT,
         }
         body = {"project": project_id or "aicode-consumers"}
         proxy = _detect_antigravity_proxy()
@@ -925,17 +938,25 @@ class GoogleAntigravityAdapter(BaseAccountAdapter):
         if target_model.startswith("models/"):
             target_model = target_model[7:]
 
-        # Gemini 4 Hydrogen 系列映射与思考等级判定（对齐官方日常帮助 Hydrogen 高/中/低）
-        is_hydrogen = "hydrogen" in target_model.lower() or target_model.lower() in ("gemini-4", "4-hydrogen", "gemini-4-default")
-        hydrogen_budget = None
-        if is_hydrogen:
-            if "low" in target_model.lower():
-                hydrogen_budget = 4096
-            elif "medium" in target_model.lower():
-                hydrogen_budget = 8192
-            else:  # high 或默认档位，严格对齐官方 client 默认勾选的 'Hydrogen 高'
-                hydrogen_budget = 24576
-            target_model = "gemini-4-hydrogen-sonar"
+        # Gemini 4 Hydrogen 系列映射与思考等级判定（直连官方 Gemini 4 Hydrogen Low/Medium/High/XHigh，保留 Sonar 轻量低耗通道）
+        lower_target = target_model.lower()
+        hydrogen_level = None
+        if target_model == "gemini-4-hydrogen-sonar":
+            # 显式选择 Sonar 变体时保持原样透传（默认轻量思考，消耗配额慢）
+            hydrogen_level = "SONAR"
+        elif "hydrogen" in lower_target or lower_target in ("gemini-4", "4-hydrogen", "gemini-4-default"):
+            if "xhigh" in lower_target or "extra-high" in lower_target or "extra_high" in lower_target:
+                target_model = "gemini-4-hydrogen-xhigh"
+                hydrogen_level = "XHIGH"
+            elif "low" in lower_target:
+                target_model = "gemini-4-hydrogen-low"
+                hydrogen_level = "LOW"
+            elif "medium" in lower_target:
+                target_model = "gemini-4-hydrogen-medium"
+                hydrogen_level = "MEDIUM"
+            else:  # high 或默认档位，严格对齐官方默认勾选的 High
+                target_model = "gemini-4-hydrogen-high"
+                hydrogen_level = "HIGH"
         elif target_model in ("gemini-3.5-flash-lite", "3.5-flash-lite", "flash-lite"):
             target_model = "gemini-3.5-flash-lite"
         # 兼容简写别名映射到对应的默认思考分级
@@ -1041,36 +1062,45 @@ class GoogleAntigravityAdapter(BaseAccountAdapter):
                 "parts": [{"text": system_instruction_text.strip()}]
             }
 
-        # 如果模型带 -high / -medium / -low 等思考分级，注入 thinkingConfig
+        # 如果模型带 -xhigh / -high / -medium / -low 等思考分级，注入 thinkingConfig
         # 必须显式携带 includeThoughts=True，否则 Google 端点默认将思考流剥离隐藏
-        thinking_budget = None
-        if hydrogen_budget is not None:
-            thinking_budget = hydrogen_budget
-        elif "high" in target_model.lower():
-            thinking_budget = 24576
-        elif "medium" in target_model.lower():
-            thinking_budget = 8192
-        elif "low" in target_model.lower():
-            thinking_budget = 4096
-        elif "thinking" in target_model.lower() or "claude" in target_model.lower():
-            thinking_budget = 8192
-
-        if thinking_budget is not None:
-            # 开启思考时，必须保证 maxOutputTokens 严格大于 thinkingBudget，
-            # 否则 Anthropic/Claude 等模型会上报 400 错误 (max_tokens must be greater than thinking.budget_tokens)，
-            # 同时避免思考 token 耗尽总输出配额导致回答截断
-            effective_max_tokens = max(effective_max_tokens, thinking_budget + 4096)
-            cloudcode_payload["request"]["generationConfig"]["maxOutputTokens"] = effective_max_tokens
+        if hydrogen_level == "SONAR":
+            # Sonar 沿用上游轻量预设（不强塞高 budget，保持低配额消耗同时流式返回思考）
             cloudcode_payload["request"]["generationConfig"]["thinkingConfig"] = {
-                "thinkingBudget": thinking_budget,
                 "includeThoughts": True,
             }
+        elif hydrogen_level is not None:
+            cloudcode_payload["request"]["generationConfig"]["thinkingConfig"] = {
+                "thinkingLevel": hydrogen_level,
+                "includeThoughts": True,
+            }
+        else:
+            thinking_budget = None
+            if "high" in target_model.lower():
+                thinking_budget = 24576
+            elif "medium" in target_model.lower():
+                thinking_budget = 8192
+            elif "low" in target_model.lower():
+                thinking_budget = 4096
+            elif "thinking" in target_model.lower() or "claude" in target_model.lower():
+                thinking_budget = 8192
+
+            if thinking_budget is not None:
+                # 开启思考时，必须保证 maxOutputTokens 严格大于 thinkingBudget，
+                # 否则 Anthropic/Claude 等模型会上报 400 错误 (max_tokens must be greater than thinking.budget_tokens)，
+                # 同时避免思考 token 耗尽总输出配额导致回答截断
+                effective_max_tokens = max(effective_max_tokens, thinking_budget + 4096)
+                cloudcode_payload["request"]["generationConfig"]["maxOutputTokens"] = effective_max_tokens
+                cloudcode_payload["request"]["generationConfig"]["thinkingConfig"] = {
+                    "thinkingBudget": thinking_budget,
+                    "includeThoughts": True,
+                }
 
         cloudcode_headers = {
             "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json",
             "Accept": "text/event-stream",
-            "User-Agent": "antigravity/2.9.1 windows/amd64",
+            "User-Agent": ANTIGRAVITY_USER_AGENT,
         }
         if "claude" in target_model.lower():
             cloudcode_headers["anthropic-beta"] = "claude-code-20250219,interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14"

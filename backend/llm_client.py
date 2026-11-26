@@ -20,8 +20,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from .anthropic_client import LLMError, LLMErrorCode
-from .runtime_budget import AggregateRuntimeBudget
-from .runtime_schedule import build_budget_convergence_plan
 from .tools import get_tool_registry
 from .tools.builtin.clean_registry import format_tool_result_for_display
 from .tool_loop_guard import (
@@ -1359,7 +1357,11 @@ class LLMClient:
         """
         api_client = self._get_api_client()
         from liuruyan.llm import CoreRequest, RequestContext
-        from .runtime_budget import get_effective_max_output_tokens, get_effective_stream_idle_timeout
+        from .llm_stream_utils import (
+            get_effective_max_output_tokens,
+            get_effective_stream_idle_timeout,
+            iter_stream_with_idle_timeout,
+        )
 
         # 2026-05-25：辅助任务（思考块翻译等）通过 _disable_thinking_var 关 reasoning。
         # 主对话路径用 _chat_with_tools / _chat_one_round 不走这里，无影响。
@@ -1390,8 +1392,6 @@ class LLMClient:
         core_ctx = RequestContext(cancel_event=None)
 
         # chunk-level idle timeout helper：详见 backend/llm_stream_utils.py
-        # P3-stream-timeout-cfg：从 runtime_budget.json 读，让用户在“预算”对话框里能调。
-        from .llm_stream_utils import iter_stream_with_idle_timeout
         idle_timeout = get_effective_stream_idle_timeout("openai")
         async for ev in iter_stream_with_idle_timeout(
             api_client.send_stream(core_req, core_ctx),
@@ -1414,7 +1414,7 @@ class LLMClient:
         api_client = self._get_api_client()
         if hasattr(api_client, "send_completion"):
             from liuruyan.llm import CoreRequest, RequestContext
-            from .runtime_budget import get_effective_max_output_tokens
+            from .llm_stream_utils import get_effective_max_output_tokens
             req = CoreRequest(
                 messages=messages,
                 system=None,
@@ -1777,7 +1777,11 @@ class LLMClient:
             api_client = self._get_api_client()
 
         from liuruyan.llm import CoreRequest, RequestContext
-        from .runtime_budget import get_effective_max_output_tokens, get_effective_stream_idle_timeout
+        from .llm_stream_utils import (
+            get_effective_max_output_tokens,
+            get_effective_stream_idle_timeout,
+            iter_stream_with_idle_timeout,
+        )
 
         # CoreRequest 等价性映射（vs 原 SDK 入参）：
         # - messages: 直传（OpenAI 路径 system 已嵌在 messages 内）
@@ -1814,8 +1818,6 @@ class LLMClient:
         # chunk-level idle timeout helper：详见 backend/llm_stream_utils.py
         # 必须用 wait_for 包 __anext__，不能在 async for 循环体内打时间差判断
         # —— 后者在上游静默挂死时无法触发，是 2026-05-13 聊天框光标卡死事故根因。
-        # P3-stream-timeout-cfg：读 runtime_budget.json
-        from .llm_stream_utils import iter_stream_with_idle_timeout
         idle_timeout = get_effective_stream_idle_timeout("openai")
         async for ev in iter_stream_with_idle_timeout(
             api_client.send_stream(core_req, core_ctx),
@@ -2131,7 +2133,7 @@ class LLMClient:
             "token_usage": round_token_usage,
         }
 
-    async def _dispatch_completion_fallback(self, messages, message, *, guard, budget, chain_hook, stream, ctl):
+    async def _dispatch_completion_fallback(self, messages, message, *, guard, chain_hook, stream, ctl):
         """send_completion 兜底分支的共享 dispatch/retry/stop 逻辑（空响应 & 异常两条兜底共用）。
 
         message: send_completion 返回的 {content, tool_calls, finish_reason, usage}。
@@ -2285,18 +2287,6 @@ class LLMClient:
                 yield {"type": "content", "text": final_response}
                 ctl["action"] = "return"
                 return
-            stop = budget.observe_tool_batch(executed_tool_calls, executed_tool_results)
-            if stop:
-                final_response = await self._finalize_after_tool_loop(messages, stop)
-                yield build_tool_loop_notice_event(stop)
-                yield {"type": "content", "text": final_response}
-                ctl["action"] = "return"
-                return
-            convergence = build_budget_convergence_plan(budget)
-            if convergence:
-                if stream:
-                    yield {"type": "system_notice", "kind": convergence.notice_kind, "content": convergence.notice_message, "payload": convergence.notice_payload}
-                messages.append({"role": "user", "content": convergence.prompt_message})
             ctl["action"] = "continue"
             return
         else:
@@ -2362,7 +2352,6 @@ class LLMClient:
         # v2 B 迁移：不再需要 SDK client（_chat_one_round / _chat_stream /
         # _chat_complete / fallback 全走 ApiClient）。删 client = self._ensure_openai_client()
         guard = ToolLoopGuard.from_env("openai")
-        budget = AggregateRuntimeBudget.from_env("openai")
         invalid_tool_retry_limit = max(
             0,
             int(
@@ -2373,15 +2362,29 @@ class LLMClient:
         )
         invalid_tool_retry_count = 0
 
-        # 最多进行 5 轮工具调用
-        for round_num in range(guard.max_rounds):
-            stop = budget.observe_before_round()
-            if stop:
-                final_response = await self._finalize_after_tool_loop(messages, stop)
-                yield build_tool_loop_notice_event(stop)
-                yield {"type": "content", "text": final_response}
-                return
+        round_num = -1
+        while True:
+            round_num += 1
+            if guard.max_rounds is not None and round_num >= guard.max_rounds:
+                break
             try:
+                from .memory_manager import maybe_microcompact_mid_turn, resolve_active_context_length
+
+                _mc = maybe_microcompact_mid_turn(
+                    messages,
+                    context_length=resolve_active_context_length(self.model),
+                )
+                if _mc is not None:
+                    logger.info(
+                        "[llm_client] mid-turn microcompact applied (round=%s level=%s pre=%s post=%s saved=%s)",
+                        round_num,
+                        _mc.level,
+                        _mc.pre_tokens,
+                        _mc.post_tokens,
+                        _mc.tokens_saved,
+                    )
+                    messages[:] = _mc.messages
+
                 # v2 C2-d-2：调 _chat_one_round 跑单轮（_chat_one_round 内部含
                 # stream 累积 / token usage / native 工具 dispatch / invalid 检测）。
                 # _chat_one_round 不修改 messages — 通过末尾 _round_done 事件
@@ -2504,23 +2507,6 @@ class LLMClient:
                         yield build_tool_loop_notice_event(stop)
                         yield {"type": "content", "text": final_response}
                         return
-                    stop = budget.observe_tool_batch(executed_tool_calls, executed_tool_results)
-                    if stop:
-                        final_response = await self._finalize_after_tool_loop(messages, stop)
-                        yield build_tool_loop_notice_event(stop)
-                        yield {"type": "content", "text": final_response}
-                        return
-
-                    convergence = build_budget_convergence_plan(budget)
-                    if convergence:
-                        if stream:
-                            yield {
-                                "type": "system_notice",
-                                "kind": convergence.notice_kind,
-                                "content": convergence.notice_message,
-                                "payload": convergence.notice_payload,
-                            }
-                        messages.append({"role": "user", "content": convergence.prompt_message})
                     continue  # 继续下一轮对话
 
                 # 没 native 工具调用 → text-fallback / 空响应 fallback
@@ -2596,12 +2582,6 @@ class LLMClient:
                             yield build_tool_loop_notice_event(stop)
                             yield {"type": "content", "text": final_response}
                             return
-                        stop = budget.observe_tool_batch(parsed_tools, raw_tool_results)
-                        if stop:
-                            final_response = await self._finalize_after_tool_loop(messages, stop)
-                            yield build_tool_loop_notice_event(stop)
-                            yield {"type": "content", "text": final_response}
-                            return
 
                         # 用纯文本 assistant + user 消息传递工具结果（避免 tool_calls 格式兼容性问题）
                         # 很多模型（如 GLM）对 tool_calls 消息格式支持不完善
@@ -2638,16 +2618,6 @@ class LLMClient:
                                 yield build_tool_loop_notice_event(stop)
                                 yield {"type": "content", "text": final_response}
                                 return
-                        convergence = build_budget_convergence_plan(budget)
-                        if convergence:
-                            if stream:
-                                yield {
-                                    "type": "system_notice",
-                                    "kind": convergence.notice_kind,
-                                    "content": convergence.notice_message,
-                                    "payload": convergence.notice_payload,
-                                }
-                            messages.append({"role": "user", "content": convergence.prompt_message})
                         continue  # 继续下一轮
                     if not stream:
                         yield {"type": "content", "text": current_content}
@@ -2685,7 +2655,7 @@ class LLMClient:
                     }
                     async for _ev in self._dispatch_completion_fallback(
                         messages, fb_message,
-                        guard=guard, budget=budget, chain_hook=chain_hook,
+                        guard=guard, chain_hook=chain_hook,
                         stream=stream, ctl=ctl,
                     ):
                         yield _ev
@@ -2758,7 +2728,7 @@ class LLMClient:
                     }
                     async for _ev in self._dispatch_completion_fallback(
                         messages, message,
-                        guard=guard, budget=budget, chain_hook=chain_hook,
+                        guard=guard, chain_hook=chain_hook,
                         stream=stream, ctl=ctl,
                     ):
                         yield _ev

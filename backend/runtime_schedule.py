@@ -2,8 +2,6 @@ import os
 from dataclasses import dataclass
 from typing import Iterable
 
-from .runtime_budget import AggregateRuntimeBudget, RuntimeBudgetNotice
-
 
 def _read_int_env(*names: str, default: int) -> int:
     for name in names:
@@ -15,14 +13,6 @@ def _read_int_env(*names: str, default: int) -> int:
         except ValueError:
             continue
     return default
-
-
-@dataclass(frozen=True)
-class RuntimeConvergencePlan:
-    notice_kind: str
-    notice_message: str
-    prompt_message: str
-    notice_payload: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -73,20 +63,6 @@ class WorkerPlanStep:
     timeout: int
     depends_on: tuple[str, ...]
     stage: int
-
-
-def build_budget_convergence_plan(
-    budget: AggregateRuntimeBudget,
-) -> RuntimeConvergencePlan | None:
-    notice: RuntimeBudgetNotice | None = budget.build_near_limit_notice()
-    if not notice:
-        return None
-    return RuntimeConvergencePlan(
-        notice_kind=notice.kind,
-        notice_message=notice.message,
-        prompt_message=notice.prompt,
-        notice_payload=notice.payload,
-    )
 
 
 def get_runtime_scheduler_limits() -> RuntimeSchedulerLimits:

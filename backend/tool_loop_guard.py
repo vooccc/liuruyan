@@ -17,13 +17,16 @@ def _read_int_env(*names: str, default: int) -> int:
     return default
 
 
-def _resolve_int(file_value, *env_names: str, default: int) -> int:
-    if isinstance(file_value, (int, float)) and file_value == file_value:
+def _read_optional_int_env(*names: str) -> Optional[int]:
+    for name in names:
+        raw = os.getenv(name)
+        if raw is None or raw == "":
+            continue
         try:
-            return max(1, int(file_value))
-        except (TypeError, ValueError):
-            pass
-    return _read_int_env(*env_names, default=default)
+            return max(1, int(raw))
+        except ValueError:
+            continue
+    return None
 
 
 def _stable_json(value: Any) -> str:
@@ -42,9 +45,9 @@ class ToolLoopStop:
 
 
 class ToolLoopGuard:
-    """Protects against runaway tool loops without forcing a tiny fixed budget."""
+    """Protects against infinite identical tool call loops without artificially capping model turns."""
 
-    def __init__(self, max_rounds: int, repeated_identical_rounds: int):
+    def __init__(self, max_rounds: Optional[int] = None, repeated_identical_rounds: int = 2):
         self.max_rounds = max_rounds
         self.repeated_identical_rounds = repeated_identical_rounds
         self._last_round_fingerprint: Optional[str] = None
@@ -52,18 +55,10 @@ class ToolLoopGuard:
 
     @classmethod
     def from_env(cls, provider: str) -> "ToolLoopGuard":
-        # 三层 fallback：runtime_budget.json (max_tool_rounds 字段) → env → 默认。
-        # 与 AggregateRuntimeBudget.from_env 共享同一份 runtime_budget.json，让前端
-        # 一处调整就同时影响 budget 总数限和 guard 轮数限（语义不同但用户视角一致）。
-        from .runtime_budget_config import load_runtime_budget_config
-        file_cfg = load_runtime_budget_config()
-
         prefix = provider.upper()
-        max_rounds = _resolve_int(
-            file_cfg.get("max_tool_rounds"),
+        max_rounds = _read_optional_int_env(
             f"{prefix}_MAX_TOOL_ROUNDS",
             "LLM_MAX_TOOL_ROUNDS",
-            default=120,
         )
         repeated_identical_rounds = _read_int_env(
             f"{prefix}_MAX_IDENTICAL_TOOL_ROUNDS",
@@ -106,6 +101,14 @@ class ToolLoopGuard:
         return None
 
     def max_rounds_stop(self) -> ToolLoopStop:
+        if self.max_rounds is None:
+            return ToolLoopStop(
+                reason="chain_hook_stop",
+                message=(
+                    "运行策略已触发收敛终止，不要再继续调用工具，"
+                    "请基于当前信息直接回答用户；如果任务仍未完成，请明确说明剩余部分。"
+                ),
+            )
         return ToolLoopStop(
             reason="max_tool_rounds",
             message=(

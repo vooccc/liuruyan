@@ -196,6 +196,52 @@ function ensureLinksOpenInNewTab(html: string): string {
 const MD_CACHE = new Map<string, string>()
 const MAX_MD_CACHE_SIZE = 500
 
+const INJECTED_USER_DETAILS_PREFIX_RE =
+  /^\s*(<details(?:\s+class="liuruyan-(?:lry-workflow|ide-ctx)")?>\s*<summary>(?:📎 参考工作流：|🪟 IDE 上下文)[\s\S]*?<\/details>)/
+
+function renderUserInjectedDetailsPrefix(text: string): { prefixHtml: string; body: string } {
+  let rest = text
+  const prefixParts: string[] = []
+
+  // 只剥离消息最开头由系统注入的 workflow / IDE 上下文 <details> 块，
+  // 正文里出现的任何 HTML 标签一律按纯文本转义。
+  while (rest) {
+    const match = rest.match(INJECTED_USER_DETAILS_PREFIX_RE)
+    if (!match) break
+    const block = match[1]
+    prefixParts.push(ensureLinksOpenInNewTab(marked.parse(block) as string))
+    rest = rest.slice(match[0].length)
+  }
+
+  return {
+    prefixHtml: prefixParts.join(''),
+    body: rest,
+  }
+}
+
+function normalizeUserPlainText(text: string): string {
+  return text
+    .replace(/\r\n?/g, '\n')
+    .replace(/^(?:[ \t]*\n)+/, '')
+    .replace(/(?:\n[ \t]*)+$/, '')
+}
+
+export function renderUserMessageHtml(text: string): string {
+  if (!text) return ''
+
+  const normalized = text.replace(/\r\n?/g, '\n')
+  const { prefixHtml, body } = renderUserInjectedDetailsPrefix(normalized)
+  const plainBody = normalizeUserPlainText(body)
+
+  if (!prefixHtml && !plainBody) return ''
+
+  const bodyHtml = plainBody
+    ? `<div class="user-plain-text">${escapeHtml(plainBody)}</div>`
+    : ''
+
+  return `${prefixHtml}${bodyHtml}`
+}
+
 export function renderChatMarkdown(text: string): string {
   if (!text) return ''
 

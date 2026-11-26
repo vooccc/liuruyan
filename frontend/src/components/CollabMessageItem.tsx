@@ -6,7 +6,7 @@ import { getAvatarFallback, getAvatarSrc } from './avatarUtils'
 import { ConversationMessageMeta, CopyMessageButton, DeleteMessageButton, InplaceEditButton } from './conversationUi'
 import AskUserQuestionCard, { type AskUserAnswer } from './AskUserQuestionCard'
 import InplaceMessageEditor from './InplaceMessageEditor'
-import { renderChatMarkdown } from './chatMarkdown'
+import { renderChatMarkdown, renderUserMessageHtml } from './chatMarkdown'
 import {
   RuntimeChainSegments,
   tryParseAskPayload,
@@ -125,8 +125,14 @@ export default function CollabMessageItem({
   // P1 2026-09-29：正文从纯文本升级为 markdown（与单聊同一 renderChatMarkdown
   // 管线：GFM 表格、breaks、代码高亮、复制按钮）。首 chunk 前内容为空时退回
   // 纯文本渲染路径，流式光标继续走 span。
-  const rawBody = normalizeMarkdownContent(bubble.content || '')
-  const bodyHtml = rawBody.trim() ? renderChatMarkdown(rawBody) : ''
+  const bodyHtml = (() => {
+    if (isMe) {
+      const rawUserText = bubble.content || ''
+      return rawUserText.trim() ? renderUserMessageHtml(rawUserText) : ''
+    }
+    const rawBody = normalizeMarkdownContent(bubble.content || '')
+    return rawBody.trim() ? renderChatMarkdown(rawBody) : ''
+  })()
 
   // 内联 ask 卡（P1 议事厅闭环）：提问必须常驻可见——链路面板会被自动折叠，
   // 塞面板里会把问题藏起来。扫描 tool_call 段的 awaiting/answered 载荷逐条出卡；

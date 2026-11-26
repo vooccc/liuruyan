@@ -174,4 +174,22 @@ describe('buildSessionMessages', () => {
     expect(result).toHaveLength(10_000)
     expect(result[9_999].message_seq).toBe(10_000)
   })
+
+  it('中段缺失用户消息或 cache 逆序时仍保持 server 相对顺序', () => {
+    const serverMessages: Message[] = [
+      { id: 1, role: 'user', content: '上一轮', message_seq: 58, history_revision: 39, client_id: 'u58' },
+      { id: 2, role: 'assistant', content: '被中断', message_seq: 59, history_revision: 40, client_id: 'a59' },
+      { id: 3, role: 'user', content: '继续', message_seq: 61, history_revision: 41, client_id: 'u61' },
+      { id: 4, role: 'assistant', content: '已完成', message_seq: 62, history_revision: 42, client_id: 'a62' },
+    ]
+    const cacheWithMiddleGap: Message[] = [
+      { id: 101, role: 'user', content: '上一轮', message_seq: 58, history_revision: 39, client_id: 'u58' },
+      { id: 102, role: 'assistant', content: '被中断', message_seq: 59, history_revision: 40, client_id: 'a59' },
+      { id: 104, role: 'assistant', content: '已完成', client_id: 'a62' },
+    ]
+
+    const result = buildSessionMessages(buildSession(serverMessages), cacheWithMiddleGap)
+
+    expect(result.map((m) => m.content)).toEqual(['上一轮', '被中断', '继续', '已完成'])
+  })
 })

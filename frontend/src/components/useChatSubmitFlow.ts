@@ -1328,10 +1328,10 @@ export function useChatSubmitFlow({
     }
     const THINKING_CONFIG: SmoothConfig = {
       type: 'thinking',
-      flushChars: 35,            // 思考块也小
-      flushTimeoutMs: 300,       // 思考节奏稍慢易读
-      minIntervalMs: 250,        // 4 次/秒上限，比正文略慢符合"思考"语义
-      boundaryRe: /[。！？；!?;\n]/,
+      flushChars: 22,            // 每次约半行到一行，避免攒成大段跳变
+      flushTimeoutMs: 160,       // 慢吐兜底及时上屏
+      minIntervalMs: 120,        // ~8 次/秒均匀节拍
+      boundaryRe: /[。！？；!?;,\n，]/,
     }
     let streamQueue: StreamQueueItem[] = []
     let flushScheduled = false
@@ -1345,31 +1345,30 @@ export function useChatSubmitFlow({
       }
     }
 
-    // 把 buf 中"已成块"的部分推入 queue。force=true 全推（无视 minIntervalMs）。
+    type FlushMode = 'throttle' | 'timeout' | 'force'
+
+    // 把 buf 中"已成块"的部分推入 queue。force=全推（无视节流和步长）。
     // 返回是否实际推入了 chunk。
-    const flushSmoothBufferToQueue = (buf: SmoothBuffer, force: boolean): boolean => {
+    const flushSmoothBufferToQueue = (buf: SmoothBuffer, mode: FlushMode): boolean => {
       if (!buf.text) return false
-      // 2026-05-17：minIntervalMs 节流——非 force 路径下，距上次 flush 不足
-      // 此间隔则不 flush（buf 继续累，靠 timeout 兜底或下次输入时再次尝试）。
-      // 解决"模型突发输出 → 多帧密集块状跳变 → 视觉跟不上"。
-      // force=true（结构化事件强制）bypass 节流保证顺序。
-      if (!force && buf.lastFlushAt > 0) {
+      if (mode === 'throttle' && buf.lastFlushAt > 0) {
         const elapsedMs = Date.now() - buf.lastFlushAt
         if (elapsedMs < buf.config.minIntervalMs) return false
       }
       let cutAt = -1
-      if (!force) {
-        // 找最后一个句子边界，把边界前所有内容作为一块
-        for (let i = buf.text.length - 1; i >= 0; i--) {
+      if (mode !== 'force') {
+        const isThinking = buf.config.type === 'thinking'
+        const maxStep = isThinking ? Math.max(buf.config.flushChars + 14, 36) : buf.text.length
+        const searchEnd = Math.min(buf.text.length, maxStep)
+        for (let i = searchEnd - 1; i >= 0; i--) {
           if (buf.config.boundaryRe.test(buf.text[i])) {
             cutAt = i + 1
             break
           }
         }
-        // 没句子边界但 ≥ flushChars 字 → 强切（避免长段一直不出）
         if (cutAt < 0) {
-          if (buf.text.length < buf.config.flushChars) return false
-          cutAt = buf.text.length
+          if (mode === 'throttle' && buf.text.length < buf.config.flushChars) return false
+          cutAt = searchEnd
         }
       } else {
         cutAt = buf.text.length
@@ -1391,19 +1390,24 @@ export function useChatSubmitFlow({
       }
     }
 
+    const scheduleBufTimeout = (buf: SmoothBuffer, delayMs: number) => {
+      if (!buf.text || buf.timeoutId !== null) return
+      buf.timeoutId = window.setTimeout(() => {
+        buf.timeoutId = null
+        if (flushSmoothBufferToQueue(buf, 'timeout')) scheduleFlushIfNeeded()
+        if (buf.text) scheduleBufTimeout(buf, buf.config.minIntervalMs)
+      }, delayMs)
+    }
+
     const handleSmoothEvent = (buf: SmoothBuffer, ev: ChatStreamLikeEvent) => {
       buf.text += ev.content || ''
       buf.agentId = ev.agent_id
-      const flushed = flushSmoothBufferToQueue(buf, false)
-      if (flushed) {
+      const flushed = flushSmoothBufferToQueue(buf, 'throttle')
+      if (flushed && !buf.text) {
         cancelBufTimeout(buf)
       } else {
-        // 没凑齐 → 启动/重启超时兜底
-        cancelBufTimeout(buf)
-        buf.timeoutId = window.setTimeout(() => {
-          buf.timeoutId = null
-          if (flushSmoothBufferToQueue(buf, true)) scheduleFlushIfNeeded()
-        }, buf.config.flushTimeoutMs)
+        // 已有定时器 ticking 时不往后推，确保节奏均匀稳定
+        scheduleBufTimeout(buf, flushed ? buf.config.minIntervalMs : buf.config.flushTimeoutMs)
       }
     }
 
@@ -1411,7 +1415,7 @@ export function useChatSubmitFlow({
       if (ev.type === 'content') {
         // 正文先 flush thinking buffer 保顺序（"思考完了再说正文"）
         cancelBufTimeout(thinkingBuf)
-        flushSmoothBufferToQueue(thinkingBuf, true)
+        flushSmoothBufferToQueue(thinkingBuf, 'force')
         handleSmoothEvent(contentBuf, ev)
         return
       }
@@ -1423,8 +1427,8 @@ export function useChatSubmitFlow({
       // 否则会出现"工具卡跳出来但前面文字还没收尾"的顺序错乱。
       cancelBufTimeout(thinkingBuf)
       cancelBufTimeout(contentBuf)
-      flushSmoothBufferToQueue(thinkingBuf, true)
-      flushSmoothBufferToQueue(contentBuf, true)
+      flushSmoothBufferToQueue(thinkingBuf, 'force')
+      flushSmoothBufferToQueue(contentBuf, 'force')
       streamQueue.push({ kind: 'event', raw: ev })
     }
 
@@ -1478,8 +1482,8 @@ export function useChatSubmitFlow({
       flushScheduled = false
       cancelBufTimeout(thinkingBuf)
       cancelBufTimeout(contentBuf)
-      flushSmoothBufferToQueue(thinkingBuf, true)
-      flushSmoothBufferToQueue(contentBuf, true)
+      flushSmoothBufferToQueue(thinkingBuf, 'force')
+      flushSmoothBufferToQueue(contentBuf, 'force')
       if (streamQueue.length === 0) return
       const events = streamQueue.map((item) => item.raw)
       streamQueue = []

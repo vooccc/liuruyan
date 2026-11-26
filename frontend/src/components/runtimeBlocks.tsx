@@ -531,13 +531,8 @@ export function RuntimeThinkingBlock({
   // 内部滚动 + 自动滚到底，让"思考区域"保持固定高度而不是随内容疯涨把页面顶得乱跳。
   // 思考结束后（streaming=false）恢复正常高度，用户点开就是完整内容。
   const thinkingBodyRef = useRef<HTMLDivElement | null>(null)
-  // 2026-05-21 修：用户在思考块内滚轮上滑时不能跟原代码"无脑钉底"——
-  // 否则每帧 content 增量都把 scrollTop 拉回底部，滚轮根本滑不动。
-  // 跟正文外层（Chat.tsx 的 userScrolledUpRef）同款守卫：
-  //   - 距底 > 24px 视为用户上滑 → 暂停 autopin
-  //   - 用户滑回底部附近 → 自动恢复跟随
-  //   - streaming 结束 → 重置（下次重新开始流式时再判定）
   const userScrolledUpInThinkingRef = useRef(false)
+
   useEffect(() => {
     if (!streaming) {
       userScrolledUpInThinkingRef.current = false
@@ -545,8 +540,7 @@ export function RuntimeThinkingBlock({
     }
     if (!expanded) return
     const el = thinkingBodyRef.current
-    if (!el) return
-    if (userScrolledUpInThinkingRef.current) return
+    if (!el || userScrolledUpInThinkingRef.current) return
     el.scrollTop = el.scrollHeight
   }, [streaming, expanded, content, htmlContent])
 
@@ -554,7 +548,6 @@ export function RuntimeThinkingBlock({
     const el = thinkingBodyRef.current
     if (!el) return
     const distanceFromBottom = el.scrollHeight - el.clientHeight - el.scrollTop
-    // 滑回底部附近（< 24px）→ 恢复跟随；明显上滑 → 暂停跟随
     userScrolledUpInThinkingRef.current = distanceFromBottom > 24
   }
 
@@ -625,8 +618,8 @@ export function RuntimeThinkingBlock({
         </div>
       )
     }
-    // 原文路径（保持原来逻辑）
-    if (htmlContent) {
+    // 原文路径：流式阶段渲染纯文本节点避免 innerHTML 整块重建导致滚动位置闪跳，结束后切 Markdown HTML
+    if (!streaming && htmlContent) {
       return (
         <div
           ref={thinkingBodyRef}
@@ -1082,7 +1075,7 @@ export function RuntimeChainSegments({
                 expanded={isExpanded}
                 streaming={isThinkingStreaming}
                 onToggle={onToggleThinking ? () => onToggleThinking(thinkingKey) : undefined}
-                htmlContent={renderMarkdown ? renderMarkdown(segment.content) : undefined}
+                htmlContent={!isThinkingStreaming && renderMarkdown ? renderMarkdown(segment.content) : undefined}
                 sessionId={sessionId}
                 agentId={sourceAgent?.id ?? null}
                 renderMarkdown={renderMarkdown}

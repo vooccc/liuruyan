@@ -634,6 +634,227 @@ async def forward_embeddings(
         ) from exc
 
 
+async def forward_compute_account_nonstream(
+    provider: ProviderConfig,
+    body: Dict[str, Any],
+    vendor_model: str,
+    *,
+    incoming_headers: Dict[str, str],
+    timeout_secs: float = 600.0,
+) -> Tuple[int, bytes, Dict[str, str]]:
+    """Pro 算力账号池（Google Antigravity 等）非流式 OpenAI Chat 转发。"""
+    from ..compute_accounts.models_provider import stream_pro_chat
+
+    messages = list(body.get("messages") or [])
+    kwargs: Dict[str, Any] = {}
+    if body.get("temperature") is not None:
+        kwargs["temperature"] = body["temperature"]
+    if body.get("max_tokens") is not None:
+        kwargs["max_tokens"] = body["max_tokens"]
+    if body.get("tools"):
+        kwargs["tools"] = body["tools"]
+
+    content_parts: list[str] = []
+    reasoning_parts: list[str] = []
+    tool_calls: list[Dict[str, Any]] = []
+    usage_obj: Optional[Dict[str, Any]] = None
+    last_error = ""
+
+    async def _collect() -> None:
+        nonlocal usage_obj, last_error
+        async for chunk in stream_pro_chat(provider.id, vendor_model, messages, **kwargs):
+            ctype = chunk.get("type")
+            if ctype == "delta" and chunk.get("content"):
+                content_parts.append(str(chunk["content"]))
+            elif ctype == "thinking" and chunk.get("content"):
+                reasoning_parts.append(str(chunk["content"]))
+            elif ctype == "tool_call":
+                tool_calls.append({
+                    "id": str(chunk.get("id") or f"call_{len(tool_calls)}"),
+                    "type": "function",
+                    "function": {
+                        "name": str(chunk.get("name") or ""),
+                        "arguments": str(chunk.get("arguments") or "{}"),
+                    },
+                })
+            elif ctype == "usage" and isinstance(chunk.get("usage"), dict):
+                usage_obj = dict(chunk["usage"])
+            elif ctype == "error":
+                last_error = str(chunk.get("error") or "compute account error")
+
+    try:
+        await asyncio.wait_for(_collect(), timeout=timeout_secs)
+    except asyncio.TimeoutError as exc:
+        raise GatewayUpstreamError(
+            f"compute account timeout: {exc}", status=504, code="upstream_timeout"
+        ) from exc
+
+    if last_error and not content_parts and not tool_calls:
+        status = 429 if ("429" in last_error or "配额" in last_error or "quota" in last_error.lower()) else (
+            401 if ("401" in last_error or "403" in last_error or "授权" in last_error) else 502
+        )
+        err_body = json.dumps(
+            {"error": {"message": last_error, "type": "compute_account_error", "code": status}},
+            ensure_ascii=False,
+        ).encode("utf-8")
+        return status, err_body, {"content-type": "application/json"}
+
+    msg: Dict[str, Any] = {
+        "role": "assistant",
+        "content": "".join(content_parts),
+    }
+    if reasoning_parts:
+        msg["reasoning_content"] = "".join(reasoning_parts)
+    if tool_calls:
+        msg["tool_calls"] = tool_calls
+
+    resp_obj: Dict[str, Any] = {
+        "id": f"chatcmpl-ca-{int(time.time() * 1000)}",
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": vendor_model,
+        "choices": [
+            {
+                "index": 0,
+                "message": msg,
+                "finish_reason": "tool_calls" if tool_calls else "stop",
+            }
+        ],
+    }
+    if usage_obj is not None:
+        resp_obj["usage"] = usage_obj
+    return 200, json.dumps(resp_obj, ensure_ascii=False).encode("utf-8"), {"content-type": "application/json"}
+
+
+async def forward_compute_account_stream(
+    provider: ProviderConfig,
+    body: Dict[str, Any],
+    vendor_model: str,
+    *,
+    incoming_headers: Dict[str, str],
+    idle_timeout_secs: float = 180.0,
+    overall_timeout_secs: float = 1800.0,
+) -> AsyncIterator[bytes]:
+    """Pro 算力账号池（Google Antigravity 等）流式 OpenAI SSE 转发。"""
+    from ..compute_accounts.models_provider import stream_pro_chat
+
+    messages = list(body.get("messages") or [])
+    kwargs: Dict[str, Any] = {}
+    if body.get("temperature") is not None:
+        kwargs["temperature"] = body["temperature"]
+    if body.get("max_tokens") is not None:
+        kwargs["max_tokens"] = body["max_tokens"]
+    if body.get("tools"):
+        kwargs["tools"] = body["tools"]
+
+    cid = f"chatcmpl-ca-{int(time.time() * 1000)}"
+    created = int(time.time())
+    emitted = False
+    usage_obj: Optional[Dict[str, Any]] = None
+    saw_tool_call = False
+    gen = stream_pro_chat(provider.id, vendor_model, messages, **kwargs)
+    try:
+        while True:
+            try:
+                chunk = await asyncio.wait_for(gen.__anext__(), timeout=idle_timeout_secs)
+            except StopAsyncIteration:
+                break
+            except asyncio.TimeoutError as exc:
+                if not emitted:
+                    raise GatewayUpstreamError(
+                        f"compute account idle timeout: {exc}", status=504, code="upstream_timeout"
+                    ) from exc
+                yield (
+                    b"data: "
+                    + json.dumps({"error": {"code": "upstream_idle_timeout", "message": "upstream idle timeout"}}).encode("utf-8")
+                    + b"\n\n"
+                )
+                break
+
+            ctype = chunk.get("type")
+            if ctype == "delta" and chunk.get("content"):
+                emitted = True
+                evt = {
+                    "id": cid,
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": vendor_model,
+                    "choices": [{"index": 0, "delta": {"content": str(chunk["content"])}, "finish_reason": None}],
+                }
+                yield b"data: " + json.dumps(evt, ensure_ascii=False).encode("utf-8") + b"\n\n"
+            elif ctype == "thinking" and chunk.get("content"):
+                emitted = True
+                evt = {
+                    "id": cid,
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": vendor_model,
+                    "choices": [{"index": 0, "delta": {"reasoning_content": str(chunk["content"])}, "finish_reason": None}],
+                }
+                yield b"data: " + json.dumps(evt, ensure_ascii=False).encode("utf-8") + b"\n\n"
+            elif ctype == "tool_call":
+                emitted = True
+                saw_tool_call = True
+                evt = {
+                    "id": cid,
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": vendor_model,
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {
+                                "tool_calls": [
+                                    {
+                                        "index": 0,
+                                        "id": str(chunk.get("id") or "call_0"),
+                                        "type": "function",
+                                        "function": {
+                                            "name": str(chunk.get("name") or ""),
+                                            "arguments": str(chunk.get("arguments") or "{}"),
+                                        },
+                                    }
+                                ]
+                            },
+                            "finish_reason": None,
+                        }
+                    ],
+                }
+                yield b"data: " + json.dumps(evt, ensure_ascii=False).encode("utf-8") + b"\n\n"
+            elif ctype == "usage" and isinstance(chunk.get("usage"), dict):
+                usage_obj = dict(chunk["usage"])
+            elif ctype == "error":
+                err_msg = str(chunk.get("error") or "compute account error")
+                if not emitted:
+                    status = 429 if ("429" in err_msg or "配额" in err_msg or "quota" in err_msg.lower()) else (
+                        401 if ("401" in err_msg or "403" in err_msg or "授权" in err_msg) else 502
+                    )
+                    raise GatewayUpstreamError(err_msg, status=status, code="compute_account_error")
+                yield (
+                    b"data: "
+                    + json.dumps({"error": {"code": "upstream_error", "status": 502, "message": err_msg}}, ensure_ascii=False).encode("utf-8")
+                    + b"\n\n"
+                )
+                yield b"data: [DONE]\n\n"
+                return
+    finally:
+        aclose = getattr(gen, "aclose", None)
+        if aclose is not None:
+            await aclose()
+
+    finish_evt: Dict[str, Any] = {
+        "id": cid,
+        "object": "chat.completion.chunk",
+        "created": created,
+        "model": vendor_model,
+        "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls" if saw_tool_call else "stop"}],
+    }
+    if usage_obj is not None:
+        finish_evt["usage"] = usage_obj
+    yield b"data: " + json.dumps(finish_evt, ensure_ascii=False).encode("utf-8") + b"\n\n"
+    yield b"data: [DONE]\n\n"
+
+
 __all__ = [
     "GatewayUpstreamError",
     "forward_openai_chat_nonstream",
@@ -644,5 +865,7 @@ __all__ = [
     "forward_openai_chat_via_anthropic_stream",
     "forward_anthropic_messages_via_openai_nonstream",
     "forward_anthropic_messages_via_openai_stream",
+    "forward_compute_account_nonstream",
+    "forward_compute_account_stream",
     "forward_embeddings",
 ]

@@ -37,6 +37,8 @@ from .adapter import (
     forward_anthropic_messages_stream,
     forward_anthropic_messages_via_openai_nonstream,
     forward_anthropic_messages_via_openai_stream,
+    forward_compute_account_nonstream,
+    forward_compute_account_stream,
     forward_embeddings,
     forward_openai_chat_nonstream,
     forward_openai_chat_stream,
@@ -436,6 +438,9 @@ async def anthropic_messages(
 # ─────────────────────── 端点共享 helper（M3 重构） ───────────────────────
 
 
+_PRO_TRANSPORTS = ("google-antigravity", "compute_account")
+
+
 def _pick_openai_endpoint_nonstream_forwarder(candidate: ResolveResult):
     """OpenAI 端点根据 candidate.transport 选 nonstream forwarder。"""
     t = candidate.provider.transport
@@ -443,6 +448,8 @@ def _pick_openai_endpoint_nonstream_forwarder(candidate: ResolveResult):
         return forward_openai_chat_nonstream
     if t == "anthropic_messages":
         return forward_openai_chat_via_anthropic_nonstream
+    if t in _PRO_TRANSPORTS:
+        return forward_compute_account_nonstream
     raise GatewayUpstreamError(
         f"unsupported transport '{t}'", status=501, code="transport_unsupported"
     )
@@ -454,6 +461,8 @@ def _pick_openai_endpoint_stream_forwarder(candidate: ResolveResult):
         return forward_openai_chat_stream
     if t == "anthropic_messages":
         return forward_openai_chat_via_anthropic_stream
+    if t in _PRO_TRANSPORTS:
+        return forward_compute_account_stream
     raise GatewayUpstreamError(
         f"unsupported transport '{t}'", status=501, code="transport_unsupported"
     )
@@ -584,7 +593,12 @@ async def _handle_request(
 
     # 2. 校验所有 candidate 的 transport 都受支持（任一不受支持直接 501）
     for c in candidates:
-        if c.provider.transport not in ("openai_chat", "anthropic_messages"):
+        allowed_transports = (
+            ("openai_chat", "anthropic_messages", *_PRO_TRANSPORTS)
+            if endpoint == "/gateway/v1/chat/completions"
+            else ("openai_chat", "anthropic_messages")
+        )
+        if c.provider.transport not in allowed_transports:
             audit.write_event(
                 endpoint=endpoint,
                 token_id=token_id.id,

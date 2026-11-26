@@ -19,7 +19,8 @@ from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
-from ..providers.schema import ProviderConfig
+from .. import paths as _paths
+from ..providers.schema import ModelEntry, ProviderConfig
 from ..providers.store import load_providers_config_cached
 from .aliases import load_aliases_cached, split_candidate
 from .health import get_cache as _get_health_cache
@@ -54,13 +55,54 @@ def _split_namespace(model: str) -> tuple[Optional[str], str]:
     return None, model
 
 
+def _load_providers_with_pro() -> tuple[Dict[str, ProviderConfig], str]:
+    """加载 models.json providers，并在存在 compute_accounts.json 时合并 Pro 算力池虚拟通道。"""
+    cfg = load_providers_config_cached()
+    providers: Dict[str, ProviderConfig] = dict(cfg["providers"])
+    current_pid = str(cfg.get("current_provider") or "")
+    try:
+        ca_path = _paths.data_dir() / "compute_accounts.json"
+        if ca_path.exists():
+            from ..compute_accounts.models_provider import get_pro_providers
+
+            for raw_p in get_pro_providers():
+                pid = str(raw_p.get("id") or "").strip()
+                if not pid or pid in providers:
+                    continue
+                entries = [
+                    ModelEntry(
+                        id=str(m.get("id") or ""),
+                        name=str(m.get("name") or m.get("id") or ""),
+                        tags=list(m.get("tags") or []),
+                        icon=str(m.get("icon") or ""),
+                        added_by_user=bool(m.get("added_by_user", False)),
+                        pricing=m.get("pricing"),
+                        context_length=m.get("context_length"),
+                    )
+                    for m in (raw_p.get("models") or [])
+                    if isinstance(m, dict) and m.get("id")
+                ]
+                providers[pid] = ProviderConfig(
+                    id=pid,
+                    name=str(raw_p.get("name") or pid),
+                    base_url=str(raw_p.get("base_url") or ""),
+                    api_key=str(raw_p.get("api_key") or ""),
+                    transport=str(raw_p.get("transport") or "google-antigravity"),
+                    enabled=bool(raw_p.get("enabled", True)),
+                    description=str(raw_p.get("description") or ""),
+                    models=entries,
+                )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("[GATEWAY-ROUTER] 合并 compute_accounts 跳过: %s", exc)
+    return providers, current_pid
+
+
 def resolve_model(model: str) -> ResolveResult:
     """主入口。raise ResolveError 表示找不到。"""
     if not model or not isinstance(model, str):
         raise ResolveError("model_required", "model field is required", status=400)
 
-    cfg = load_providers_config_cached()
-    providers = cfg["providers"]
+    providers, current_pid = _load_providers_with_pro()
     explicit_pid, vendor_model = _split_namespace(model)
 
     if explicit_pid:
@@ -83,7 +125,6 @@ def resolve_model(model: str) -> ResolveResult:
         return ResolveResult(provider=provider, vendor_model=vendor_model)
 
     # 无 prefix：先 current_provider 同名，再全局扫
-    current_pid = cfg.get("current_provider") or ""
     current = providers.get(current_pid)
     if current and current.enabled and any(m.id == vendor_model for m in current.models):
         return ResolveResult(provider=current, vendor_model=vendor_model)
@@ -132,7 +173,7 @@ def _infer_capabilities(model_tags: list[str], model_id: str, transport: str) ->
         return sorted(caps)
 
     # chat（chat 类 transport 默认都能 chat）
-    if transport in ("openai_chat", "anthropic_messages"):
+    if transport in ("openai_chat", "anthropic_messages", "google-antigravity", "compute_account"):
         caps.add("chat")
 
     # tool_use
@@ -207,11 +248,11 @@ def list_namespaced_models(*, capability: str | None = None) -> list[dict]:
       - 每个 alias 加 `alias_status`：实时健康候选数 + 主候选是否在黑屋
       - 可选 capability 参数过滤（让 picker UI 按能力筛选）
     """
-    cfg = load_providers_config_cached()
+    providers, _ = _load_providers_with_pro()
     unhealthy = _get_health_cache().snapshot()
     out: list[dict] = []
 
-    for pid, p in cfg["providers"].items():
+    for pid, p in providers.items():
         if not p.enabled:
             continue
         # M2-B 后 openai_chat / anthropic_messages 都可从任一端点访问（跨协议互转自动生效）。
@@ -243,7 +284,7 @@ def list_namespaced_models(*, capability: str | None = None) -> list[dict]:
                 cpid, cvm = split_candidate(cand)
             except Exception:
                 continue
-            cprov = cfg["providers"].get(cpid)
+            cprov = providers.get(cpid)
             if cprov is None or not cprov.enabled:
                 continue
             for cm in cprov.models:
@@ -304,8 +345,7 @@ def resolve_chain(model: str) -> List[ResolveResult]:
     aliases = load_aliases_cached()
     entry = aliases.get(model)
     if entry is not None and entry.candidates:
-        cfg = load_providers_config_cached()
-        providers = cfg["providers"]
+        providers, _ = _load_providers_with_pro()
         results: List[ResolveResult] = []
         for cand in entry.candidates:
             try:

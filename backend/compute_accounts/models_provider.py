@@ -31,7 +31,7 @@ def get_pro_providers() -> List[Dict[str, Any]]:
                 tags.append("function_calling")
             mid = m["id"].lower()
             mname = m.get("name", "").lower()
-            if "thinking" in mid or "thinking" in mname or "reason" in mid or "high" in mid:
+            if "thinking" in mid or "thinking" in mname or "reason" in mid or "high" in mid or "hydrogen" in mid:
                 tags.append("reasoning")
             if not tags:
                 tags.append("chat")

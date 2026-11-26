@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type Ref, type RefObject } from 'react'
-import { ChevronDown, ShieldCheck, Square, Trash2 } from 'lucide-react'
+import { ChevronDown, Square } from 'lucide-react'
 import type { Model } from '../api/chat'
 import ChatModelPicker from './ChatModelPicker'
 // voice 孤岛模块：流式语音输入（项目里唯一的语音输入入口）。
@@ -29,10 +29,8 @@ interface ChatInputBottomToolbarProps {
   onSelectCustomModel: (model: Model) => void
   onOpenModelSettings: () => void
   onSelectInputMode: (mode: ChatInputMode) => void
-  onClearHistory: () => void
   onStop: () => void
   onSubmit: () => void
-  onOpenGuardianDialog: () => void
   /** 语音转写结果回调：调用方（Chat.tsx）拼接到 textarea。index = 会话内句子序号。 */
   onVoiceTranscription?: (text: string, index?: number) => void
   /** 错误回调：拒权限 / 转写失败等。建议接到 toast。 */
@@ -62,10 +60,8 @@ export default function ChatInputBottomToolbar({
   onSelectCustomModel,
   onOpenModelSettings,
   onSelectInputMode,
-  onClearHistory,
   onStop,
   onSubmit,
-  onOpenGuardianDialog,
   onVoiceTranscription,
   onVoiceError,
   onVoiceDraft,
@@ -145,21 +141,6 @@ export default function ChatInputBottomToolbar({
         onSelectCustomModel={onSelectCustomModel}
         onOpenModelSettings={onOpenModelSettings}
       />
-
-      <button
-        type="button"
-        className="toolbar-action-btn"
-        onClick={onOpenGuardianDialog}
-        title="权限管理（按角色配置文件读写、命令执行等权限）"
-      >
-        <ShieldCheck size={14} />
-        <span>权限</span>
-      </button>
-
-      <button type="button" className="toolbar-action-btn danger-btn" onClick={onClearHistory} title={CHAT_UI_TEXT.clearTitle}>
-        <Trash2 size={14} />
-        <span>{CHAT_UI_TEXT.clearLabel}</span>
-      </button>
 
       <div className="input-right-actions">
         {onVoiceTranscription ? (

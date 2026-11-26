@@ -3,7 +3,6 @@ import {
   ArrowLeft,
   Brain,
   FolderOpen,
-  Gauge,
   Hexagon,
   Monitor,
   Puzzle,
@@ -21,7 +20,6 @@ import ToolInspectIcon from '../icons/ToolInspectIcon'
 import ProviderSettings from './ProviderSettings'
 import ChannelsSettings from './ChannelsSettings'
 import PermissionsSettings from './PermissionsSettings'
-import RuntimeBudgetSettings from './RuntimeBudgetSettings'
 import MCPSettings from './mcp/MCPSettings'
 import VoiceSettings from './VoiceSettings'
 import EmbeddingSettings from './EmbeddingSettings'
@@ -47,7 +45,6 @@ export type SettingsTab =
   | 'compute_accounts'
   | 'channels'
   | 'permissions'
-  | 'runtime_budget'
   | 'mcp'
   | 'acp'
   | 'gateway'
@@ -91,12 +88,6 @@ const ALL_TABS: TabDef[] = [
     label: '权限',
     icon: <ShieldCheck size={18} />,
     description: '按角色配置文件 / 命令 / 后端代码权限',
-  },
-  {
-    id: 'runtime_budget',
-    label: '运行预算',
-    icon: <Gauge size={18} />,
-    description: '单次对话的工具次数 / 输出长度 / 时间上限（全局护栏）',
   },
   {
     id: 'tools',
@@ -256,7 +247,6 @@ export default function SettingsView({ initialTab, focusAgentId, onCloseSettings
         )}
         {tab === 'channels' && <ChannelsSettings />}
         {tab === 'permissions' && <PermissionsSettings focusAgentId={focusAgentId} />}
-        {tab === 'runtime_budget' && <RuntimeBudgetSettings />}
         {tab === 'mcp' && <MCPSettings />}
         {tab === 'acp' && <AcpSettings onJumpToProviders={() => setTab('providers')} />}
         {tab === 'gateway' && <GatewaySettings />}

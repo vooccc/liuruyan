@@ -9,6 +9,7 @@ import {
 } from './runtimeBlocks'
 import AgentAvatar from './AgentAvatar'
 import { EnhancedTextBlock } from './EnhancedTextBlock'
+import { renderUserMessageHtml } from './chatMarkdown'
 import { CheckCircle2 } from 'lucide-react'
 import UserMessageAttachments from './UserMessageAttachments'
 import { parseUserMessageAttachments, type UserMessageAttachment } from './userAttachmentFooter'
@@ -313,7 +314,7 @@ function ChatMessageItem({
                 onToggleThinking={onToggleThinking}
                 expandedToolCalls={expandedToolCalls}
                 onToggleToolCall={onToggleToolCall}
-                renderMarkdown={renderMarkdown}
+                renderMarkdown={message.role === 'user' ? renderUserMessageHtml : renderMarkdown}
                 askStatesByAskId={askStatesByAskId}
                 onSubmitAskAnswer={onSubmitAskAnswer}
               />

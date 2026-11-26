@@ -4360,6 +4360,12 @@ input[type="password"]::-ms-clear {
   box-shadow: none;
 }
 
+.message-content .user-plain-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0;
+}
+
 /* Markdown in messages — 紧凑但有呼吸感的聊天排版 */
 .message-content h1,
 .message-content h2,
@@ -8835,8 +8841,6 @@ input[type="password"]::-ms-clear {
     0 1px 0 color-mix(in srgb, var(--border-color) 62%, transparent),
     0 8px 18px color-mix(in srgb, var(--shadow-sm) 26%, transparent);
 }
-.toolbar-action-btn.danger-btn { color: var(--text-muted); }
-.toolbar-action-btn.danger-btn:hover { color: var(--accent-red); }
 
 .input-right-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; }
 
@@ -12763,6 +12767,8 @@ input[type="password"]::-ms-clear {
   overflow-y: auto;
   overflow-anchor: none;
   transition: none;
+  white-space: pre-wrap;
+  word-break: break-word;
   mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 calc(100% - 4px), transparent 100%);
   -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 calc(100% - 4px), transparent 100%);
 }
@@ -21821,24 +21827,6 @@ body.lr-resizing .sidebar { transition: none !important; }
   color: var(--text-secondary);
 }
 .settings-permissions-load-err { color: var(--accent-red); }
-
-/* 设置 → 运行预算：复用 permissions 壳，表单区单独滚动与限宽 */
-.settings-runtime-budget-form {
-  flex: 1;
-  min-height: 0;
-  max-width: 640px;
-  margin: 0 auto;
-  width: 100%;
-  overflow-y: auto;
-  padding: 16px 20px 24px;
-}
-.settings-runtime-budget-form .form-group {
-  margin-bottom: 14px;
-}
-.settings-runtime-budget-form .form-group input[type='number'],
-.settings-runtime-budget-form .form-group input[type='range'] {
-  width: 100%;
-}
 
 /* ===== Guardian Panel：左 scope + 右详情 ===== */
 .guardian-panel {

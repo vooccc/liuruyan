@@ -13,18 +13,36 @@ from copy import deepcopy
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from .runtime_budget import (
-    AGGREGATE_BUDGET_WARNING_KIND,
-    is_runtime_budget_exhaustion_kind,
-    is_runtime_budget_notice_kind,
-    is_runtime_budget_warning_kind,
-)
 from .runtime_route_contract import (
     normalize_route_budget_state,
     normalize_route_diagnostics,
     normalize_route_runtime_snapshot,
 )
 from .session import Session
+
+AGGREGATE_BUDGET_WARNING_KIND = "aggregate_budget_warning"
+AGGREGATE_BUDGET_EXHAUSTION_KINDS = frozenset(
+    {
+        "aggregate_wall_clock_exhausted",
+        "aggregate_tool_calls_exhausted",
+        "aggregate_tool_output_exhausted",
+    }
+)
+AGGREGATE_BUDGET_NOTICE_KINDS = frozenset(
+    {AGGREGATE_BUDGET_WARNING_KIND, *AGGREGATE_BUDGET_EXHAUSTION_KINDS}
+)
+
+
+def is_runtime_budget_warning_kind(kind: str) -> bool:
+    return (kind or "").strip() == AGGREGATE_BUDGET_WARNING_KIND
+
+
+def is_runtime_budget_exhaustion_kind(kind: str) -> bool:
+    return (kind or "").strip() in AGGREGATE_BUDGET_EXHAUSTION_KINDS
+
+
+def is_runtime_budget_notice_kind(kind: str) -> bool:
+    return (kind or "").strip() in AGGREGATE_BUDGET_NOTICE_KINDS
 
 logger = logging.getLogger(__name__)
 

@@ -44,11 +44,39 @@ idle timeout 写法是：
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import AsyncIterator, TypeVar
 
 from .anthropic_client import LLMError, LLMErrorCode
 
 T = TypeVar("T")
+
+DEFAULT_MAX_OUTPUT_TOKENS = 32768
+DEFAULT_STREAM_IDLE_TIMEOUT_SECONDS = 600.0
+
+
+def get_effective_stream_idle_timeout(provider: str = "openai") -> float:
+    prefix = provider.upper()
+    for env_name in (f"{prefix}_STREAM_IDLE_TIMEOUT_MS", "LLM_STREAM_IDLE_TIMEOUT_MS"):
+        raw = os.getenv(env_name)
+        if raw:
+            try:
+                return max(1000, int(raw)) / 1000.0
+            except ValueError:
+                continue
+    return DEFAULT_STREAM_IDLE_TIMEOUT_SECONDS
+
+
+def get_effective_max_output_tokens(provider: str = "openai") -> int:
+    prefix = provider.upper()
+    for env_name in (f"{prefix}_MAX_OUTPUT_TOKENS", "LLM_MAX_OUTPUT_TOKENS"):
+        raw = os.getenv(env_name)
+        if raw:
+            try:
+                return max(1, int(raw))
+            except ValueError:
+                continue
+    return DEFAULT_MAX_OUTPUT_TOKENS
 
 
 async def iter_stream_with_idle_timeout(

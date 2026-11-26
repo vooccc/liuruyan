@@ -57,12 +57,15 @@ type ComputeSubTab = 'google' | 'grok' | 'codex'
 const COMPUTE_SUBTAB_KEY = 'lr:settings-compute-subtab'
 
 const RECOMMENDED_PRO_MODELS = [
+  'gemini-4-hydrogen-xhigh',
+  'gemini-4-hydrogen-high',
+  'gemini-4-hydrogen-medium',
+  'gemini-4-hydrogen-low',
+  'gemini-4-hydrogen-sonar',
+  'gemini-3.5-flash-lite',
   'gemini-3.8-flash-medium',
   'gemini-3.8-flash-high',
-  'gemini-3.7-flash-medium',
-  'gemini-3.6-flash-medium',
   'gemini-3.1-pro-low',
-  'gemini-3.1-pro-high',
   'claude-sonnet-4-6',
   'claude-opus-4-6-thinking',
   'gpt-oss-120b-medium',

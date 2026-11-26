@@ -2711,11 +2711,6 @@ from backend.routes import export_import_router as _export_import_router
 app.include_router(_export_import_router)
 
 
-# ----- 运行预算 API：/runtime/budget ----
-from backend.routes import runtime_budget_router as _runtime_budget_router
-app.include_router(_runtime_budget_router)
-
-
 # ----- Cron jobs API：/cron/jobs* ----
 from backend.routes import cron_router as _cron_router
 app.include_router(_cron_router)
@@ -2769,10 +2764,6 @@ except ImportError:
 
 # ====== 模型管理 API：/models/* → 已拆分到 backend/routes/models_routes.py ======
 # （路径与行为不变；见上方 include_router(_models_router)）
-
-
-# ----- 运行预算 API：/runtime/budget → 已拆分到 backend/routes/runtime_budget_routes.py -----
-# （路径与行为不变；见上方 include_router(_runtime_budget_router)）
 
 
 # ----- Guardian 权限配置（路由抖到 backend/guardian_routes.py 进 Guardian 红区，避免角色自进化改 main.py 偷换权限）-----

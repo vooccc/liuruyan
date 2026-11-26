@@ -213,25 +213,19 @@ export function buildSessionMessages(session: Session, previousMessages: Message
   const result: MessageType[] = []
   const usedPersisted = new Set<MessageType>()
   const ephemeralTail: MessageType[] = []
+  const persistedIndexByMessage = new Map<MessageType, number>(
+    persistedMessages.map((message, index) => [message, index]),
+  )
+  let nextUnflushedPersistedIndex = 0
 
-  // 休眠唤醒 / backend 重连后的首次发送竞态：session 历史 snapshot 尚未返回时，
-  // cache 可能只含刚发出的新轮次。snapshot 随后返回后，这些新消息能靠 client_id
-  // 匹配到 persisted 尾部，但 persisted 历史前缀在 cache 中完全不存在。若仍先遍历
-  // cache 再追加 unused persisted，就会把“今天”放在“昨天”上面。
-  // 这里只补 earliest matched persisted 之前的 server 前缀；不按 timestamp 全局排序，
-  // 也不改变未配对 partial / failed cache 在原时间线中的保序契约。
-  const matchedPersistedIndexes = previousMessages
-    .filter((message) => !message.ephemeral && consumed.has(message))
-    .map((message) => {
-      const output = cacheToOutput.get(message)
-      return output ? persistedMessages.indexOf(output) : -1
-    })
-    .filter((index) => index >= 0)
-  if (matchedPersistedIndexes.length > 0) {
-    const earliestMatchedIndex = Math.min(...matchedPersistedIndexes)
-    for (const persistedPrefix of persistedMessages.slice(0, earliestMatchedIndex)) {
-      result.push(persistedPrefix)
-      usedPersisted.add(persistedPrefix)
+  const flushPersistedBefore = (targetIndex: number) => {
+    while (nextUnflushedPersistedIndex < targetIndex) {
+      const candidate = persistedMessages[nextUnflushedPersistedIndex]
+      nextUnflushedPersistedIndex += 1
+      if (candidate && !usedPersisted.has(candidate)) {
+        result.push(candidate)
+        usedPersisted.add(candidate)
+      }
     }
   }
 
@@ -243,6 +237,8 @@ export function buildSessionMessages(session: Session, previousMessages: Message
     if (consumed.has(cacheMessage)) {
       const persistedOutput = cacheToOutput.get(cacheMessage)
       if (persistedOutput && !usedPersisted.has(persistedOutput)) {
+        const targetIndex = persistedIndexByMessage.get(persistedOutput)
+        if (targetIndex !== undefined) flushPersistedBefore(targetIndex)
         result.push(persistedOutput)
         usedPersisted.add(persistedOutput)
       }
@@ -266,6 +262,8 @@ export function buildSessionMessages(session: Session, previousMessages: Message
         ),
       )
       if (matchingPersisted) {
+        const targetIndex = persistedIndexByMessage.get(matchingPersisted)
+        if (targetIndex !== undefined) flushPersistedBefore(targetIndex)
         const mergedPersisted = {
           ...matchingPersisted,
           segments: mergeRuntimeOnlySegments(matchingPersisted.segments, cacheMessage.segments),
@@ -278,11 +276,7 @@ export function buildSessionMessages(session: Session, previousMessages: Message
     result.push(cacheMessage)
   }
 
-  for (const persistedOutput of persistedMessages) {
-    if (!usedPersisted.has(persistedOutput)) {
-      result.push(persistedOutput)
-    }
-  }
+  flushPersistedBefore(persistedMessages.length)
 
   result.push(...ephemeralTail)
   return result
