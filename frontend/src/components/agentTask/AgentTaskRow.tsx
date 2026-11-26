@@ -1,8 +1,8 @@
-import { Wrench, Zap, Clock, ChevronDown, ChevronRight, Users, Sparkles, Brain, ArrowRight, ArrowLeft } from 'lucide-react'
+import { Wrench, Zap, Clock, ChevronDown, ChevronRight, Sparkles, Brain, ArrowRight, ArrowLeft } from 'lucide-react'
 import { renderChatMarkdown } from '../chatMarkdown'
 import type { AgentTaskActivity, AgentTaskStat, AgentTaskStatus } from './types'
 
-export type AgentTaskKind = 'worker' | 'subagent'
+export type AgentTaskKind = 'subagent'
 
 export const TASK_STATUS_CONFIG: Record<AgentTaskStatus, { label: string; tone: string }> = {
   queued: { label: '排队中', tone: '#f59e0b' },
@@ -13,7 +13,6 @@ export const TASK_STATUS_CONFIG: Record<AgentTaskStatus, { label: string; tone: 
 }
 
 export const TASK_KIND_CONFIG: Record<AgentTaskKind, { Icon: typeof Wrench; runningTone: string; defaultLabel: string }> = {
-  worker: { Icon: Users, runningTone: '#3b82f6', defaultLabel: '执行任务' },
   subagent: { Icon: Sparkles, runningTone: '#a855f7', defaultLabel: '召唤专家' },
 }
 

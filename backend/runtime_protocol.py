@@ -1,15 +1,6 @@
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from .runtime_route_contract import (
-    normalize_route_budget_state,
-    normalize_route_diagnostics,
-    normalize_route_runtime_snapshot,
-)
-
-
-RUNTIME_NOTICE_PAYLOAD_VERSION = 1
-
 RUNTIME_EVENT_TYPES = (
     "content",
     "thinking",
@@ -35,77 +26,6 @@ COLLAB_RUNTIME_EVENT_TYPES = (
     "system_notice",
     "error",
 )
-
-WORKER_TRACE_EVENT_TYPES = (
-    "worker_status",
-)
-
-
-def _assign_if_present(target: Dict[str, Any], key: str, value: Any) -> None:
-    if value is None:
-        return
-    if isinstance(value, str):
-        normalized = value.strip()
-        if not normalized:
-            return
-        target[key] = normalized
-        return
-    target[key] = value
-
-
-def build_runtime_notice_payload(
-    *,
-    route_id: Optional[str] = None,
-    worker_id: Optional[str] = None,
-    plan_id: Optional[str] = None,
-    plan_step_id: Optional[str] = None,
-    plan_stage: Optional[int] = None,
-    strategy: Optional[str] = None,
-    confidence: Optional[str] = None,
-    source: Optional[str] = None,
-    task_class: Optional[str] = None,
-    priority: Optional[int] = None,
-    timeout: Optional[int] = None,
-    execution_status: Optional[str] = None,
-    task: Optional[str] = None,
-    title: Optional[str] = None,
-    max_steps: Optional[int] = None,
-    runtime_snapshot: Optional[Dict[str, Any]] = None,
-    route_diagnostics: Optional[Dict[str, Any]] = None,
-    budget_state: Optional[Dict[str, Any]] = None,
-    extra: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    refs: Dict[str, Any] = {}
-    _assign_if_present(refs, "route_id", route_id)
-    _assign_if_present(refs, "worker_id", worker_id)
-    _assign_if_present(refs, "plan_id", plan_id)
-    _assign_if_present(refs, "plan_step_id", plan_step_id)
-    _assign_if_present(refs, "plan_stage", plan_stage)
-
-    payload: Dict[str, Any] = {
-        "contract_version": RUNTIME_NOTICE_PAYLOAD_VERSION,
-        "refs": refs,
-    }
-    _assign_if_present(payload, "strategy", strategy)
-    _assign_if_present(payload, "confidence", confidence)
-    _assign_if_present(payload, "source", source)
-    _assign_if_present(payload, "task_class", task_class)
-    _assign_if_present(payload, "priority", priority)
-    _assign_if_present(payload, "timeout", timeout)
-    _assign_if_present(payload, "execution_status", execution_status)
-    _assign_if_present(payload, "task", task)
-    _assign_if_present(payload, "title", title)
-    _assign_if_present(payload, "max_steps", max_steps)
-    if runtime_snapshot:
-        payload["runtime_snapshot"] = normalize_route_runtime_snapshot(runtime_snapshot)
-    if route_diagnostics:
-        payload["route_diagnostics"] = normalize_route_diagnostics(route_diagnostics)
-    if budget_state:
-        payload["budget_state"] = normalize_route_budget_state(budget_state)
-    if extra:
-        for key, value in extra.items():
-            _assign_if_present(payload, str(key), value)
-    return payload
 
 
 def build_runtime_trace_event(
@@ -211,22 +131,6 @@ def build_runtime_transport_event(
         payload["agent_id"] = agent_id
     if session_id:
         payload["session_id"] = session_id
-
-    # 传递 task/plan/route refs（用于前端 route progress 归并）
-    refs = {}
-    if event.get("worker_id"):
-        refs["worker_id"] = event["worker_id"]
-    if event.get("route_id"):
-        refs["route_id"] = event["route_id"]
-    if event.get("plan_id"):
-        refs["plan_id"] = event["plan_id"]
-    if event.get("plan_step_id"):
-        refs["plan_step_id"] = event["plan_step_id"]
-    if isinstance(event.get("plan_stage"), int):
-        refs["plan_stage"] = event["plan_stage"]
-
-    if refs:
-        payload["refs"] = refs
 
     return payload
 

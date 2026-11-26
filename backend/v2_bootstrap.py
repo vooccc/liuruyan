@@ -44,6 +44,7 @@ set，teardown 时 clear。这是 FastAPI 项目里"全局服务实例"的标准
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from dataclasses import dataclass, field
@@ -216,16 +217,21 @@ async def setup_v2_channels(
                 _EPHEMERAL_WEB_CONFIG_ID,
             )
 
-        await manager.startup()
-        if not manager.registered_channels():
-            log.info(
-                "[v2:channels] ChannelManager started; no adapter factory "
-                "registered yet (待 E-4 dingtalk 接入再 mgr.register_factory(...))"
-            )
+        try:
+            await manager.startup()
+            if not manager.registered_channels():
+                log.info(
+                    "[v2:channels] ChannelManager started; no adapter factory "
+                    "registered yet (待 E-4 dingtalk 接入再 mgr.register_factory(...))"
+                )
 
-        # 4. InboundRouter（消费 MessageBus → dispatch）
-        router = InboundRouter(bus, store, dispatch=dispatch)
-        await router.start()
+            # 4. InboundRouter（消费 MessageBus → dispatch）
+            router = InboundRouter(bus, store, dispatch=dispatch)
+            await router.start()
+        except asyncio.CancelledError:
+            await manager.shutdown(timeout_per_adapter=2.0)
+            _global_handle = None
+            raise
 
         # 5. 拿 web_channel 实例（如启用）暴露给 routes 层
         web_channel = None

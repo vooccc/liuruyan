@@ -132,15 +132,6 @@ export interface SessionState {
    * 提到 store 后跟 Chat lifecycle 解耦。
    */
   timelineMarkers?: RitualMarker[];
-  /**
-   * P1.4c-1（架构重构 2026-05-23）：per-sid route progress 占位消息的 messageId。
-   * 任务被路由出去后，前端塞一条 "路由中..." 的占位 assistant message，
-   * 需要按 sid 记住那条 message 的 id 以便后续 upsert / 终态清除。
-   * 之前在 Chat 组件内 useRef<Record<sid, number>>，always-mount 下能用，但
-   * 一旦 HMR / strict mode double-mount / 未来取消 always-mount → 整 map 丢，
-   * route progress 占位消息漏清。提到 store 后跟 Chat lifecycle 解耦。
-   */
-  routedProgressMessageId?: number;
 }
 
 /**
@@ -273,11 +264,6 @@ interface AppStoreActions {
    * 传 null 清空（取代 delete sessionTimelineMarkersMapRef.current[sid]）。
    */
   setSessionTimelineMarkers: (key: string, markers: RitualMarker[] | null) => void;
-  /**
-   * P1.4c-1（架构重构 2026-05-23）：写 per-sid route progress 占位 messageId（数字）。
-   * 传 null 清除（取代 delete routedProgressMessageIdMapRef.current[sid]）。
-   */
-  setSessionRoutedProgressMessageId: (key: string, messageId: number | null) => void;
   clearSession: (key: string) => void;
 
   // room actions
@@ -507,21 +493,6 @@ export const useAppStore = create<AppStore>()(
           return;
         }
         s.timelineMarkers = markers ? [...markers] : undefined;
-      }),
-
-    setSessionRoutedProgressMessageId: (key, messageId) =>
-      set((state) => {
-        const s = state.sessions[key];
-        if (!s) {
-          state.sessions[key] = {
-            key,
-            messages: [],
-            status: 'idle',
-            routedProgressMessageId: messageId === null ? undefined : messageId,
-          };
-          return;
-        }
-        s.routedProgressMessageId = messageId === null ? undefined : messageId;
       }),
 
     setSessionTokenUsage: (key, usage) =>

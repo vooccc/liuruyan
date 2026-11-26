@@ -1,12 +1,23 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use tauri::{AppHandle, RunEvent};
+use tauri::AppHandle;
 use tauri_plugin_shell::ShellExt;
 
 #[cfg(not(debug_assertions))]
-use std::sync::{Mutex, OnceLock};
+use std::io::{BufRead, BufReader};
+#[cfg(all(not(debug_assertions), windows))]
+use std::os::windows::process::CommandExt;
 #[cfg(not(debug_assertions))]
-use tauri_plugin_shell::process::{CommandChild, CommandEvent};
+use std::path::PathBuf;
+#[cfg(not(debug_assertions))]
+use std::process::{Child, Command, Stdio};
+#[cfg(not(debug_assertions))]
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Mutex, OnceLock,
+};
+#[cfg(not(debug_assertions))]
+use tauri::{Manager, RunEvent};
 
 /// 安全的外部 URL scheme 白名单。
 /// 拒绝 file:// / javascript: / data: 等可能被恶意角色注入用于钓鱼或脱沙箱的 scheme。
@@ -30,15 +41,111 @@ async fn open_external(app: AppHandle, url: String) -> Result<(), String> {
         .map_err(|e| format!("shell.open failed: {}", e))
 }
 
-/// 用全局 OnceLock 保存 Python 后端 sidecar 句柄，app 退出时 kill。
-/// 不用 `tauri::State<T>` 是因为它的生命周期绑到 AppHandle 引用，
-/// 在 `Builder::run` 的闭包里很难借出去。
+/// 用全局 OnceLock 保存 Python 后端进程句柄，app 退出时 kill。
 #[cfg(not(debug_assertions))]
-static SIDECAR_CHILD: OnceLock<Mutex<Option<CommandChild>>> = OnceLock::new();
+static BACKEND_CHILD: OnceLock<Mutex<Option<Child>>> = OnceLock::new();
+#[cfg(not(debug_assertions))]
+static BACKEND_KILLED: AtomicBool = AtomicBool::new(false);
 
 #[cfg(not(debug_assertions))]
-fn sidecar_slot() -> &'static Mutex<Option<CommandChild>> {
-    SIDECAR_CHILD.get_or_init(|| Mutex::new(None))
+fn backend_slot() -> &'static Mutex<Option<Child>> {
+    BACKEND_CHILD.get_or_init(|| Mutex::new(None))
+}
+
+/// Windows 上 `tauri_utils::platform::current_exe()` 会调用 `canonicalize()` 返回 `\\?\` 前缀路径，
+/// 传给子进程作为 executable / current_dir 时可能让 Python 的 `os.getcwd()` / `sys.executable` 带上 `\\?\`。
+#[cfg(all(not(debug_assertions), windows))]
+fn strip_win_verbatim(path: PathBuf) -> PathBuf {
+    let s = path.to_string_lossy();
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        PathBuf::from(format!(r"\\{}", rest))
+    } else if let Some(rest) = s.strip_prefix(r"\\?\") {
+        PathBuf::from(rest)
+    } else {
+        path
+    }
+}
+
+#[cfg(all(not(debug_assertions), not(windows)))]
+fn strip_win_verbatim(path: PathBuf) -> PathBuf {
+    path
+}
+
+#[cfg(not(debug_assertions))]
+fn spawn_onedir_backend(app: &tauri::App) {
+    let exe_name = if cfg!(windows) {
+        "liuruyan-backend.exe"
+    } else {
+        "liuruyan-backend"
+    };
+    let resource_dir = strip_win_verbatim(
+        app.path()
+            .resource_dir()
+            .expect("failed to resolve resource_dir"),
+    );
+    let in_bundle_dir = resource_dir.join("backend-dist").join(exe_name);
+    let backend_exe = if in_bundle_dir.exists() {
+        in_bundle_dir
+    } else {
+        resource_dir.join(exe_name)
+    };
+
+    if !backend_exe.exists() {
+        panic!("failed to locate backend binary at {:?}", backend_exe);
+    }
+
+    let mut cmd = Command::new(&backend_exe);
+    cmd.args(["--host", "127.0.0.1", "--port", "8001"])
+        .env("LIURUYAN_PROD", "1")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    if let Some(parent) = backend_exe.parent() {
+        cmd.current_dir(parent);
+    }
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+
+    let mut child = cmd.spawn().expect("failed to spawn onedir backend");
+
+    if let Some(stdout) = child.stdout.take() {
+        std::thread::spawn(move || {
+            let reader = BufReader::new(stdout);
+            for line in reader.lines().map_while(Result::ok) {
+                println!("[backend] {}", line);
+            }
+        });
+    }
+    if let Some(stderr) = child.stderr.take() {
+        std::thread::spawn(move || {
+            let reader = BufReader::new(stderr);
+            for line in reader.lines().map_while(Result::ok) {
+                eprintln!("[backend err] {}", line);
+            }
+        });
+    }
+
+    BACKEND_KILLED.store(false, Ordering::SeqCst);
+    *backend_slot().lock().unwrap() = Some(child);
+}
+
+#[cfg(not(debug_assertions))]
+fn kill_backend() {
+    if BACKEND_KILLED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    if let Some(mut child) = backend_slot().lock().unwrap().take() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    // Windows 兜底清扫：杀掉可能残留的同名子进程树（CREATE_NO_WINDOW 防闪黑窗）
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let _ = Command::new("taskkill")
+            .args(["/F", "/T", "/IM", "liuruyan-backend.exe"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output();
+    }
 }
 
 fn main() {
@@ -50,49 +157,12 @@ fn main() {
         .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![open_external])
         .setup(|_app| {
-            // Dev 模式不 spawn sidecar：dev 时开发者靠 启动.bat 拉起 venv Python backend，
-            // 走 sidecar 会和 venv 抢 127.0.0.1:8001 端口（10048）。
-            // Prod（打包 msi 安装后）只有 sidecar 这一条路，正常 spawn。
-            //
-            // 前端 waitForBackend 统一用 /health 轮询判定 ready，不依赖 Tauri event。
-            // 看起来可以"listen backend-ready + poll race"省 200ms，但那样会在 dev 下
-            // 触发 vite "new dependencies optimized, reloading" 全栏重启（几秒），赔本买卖。
-
+            // Dev 模式不 spawn 后端进程：dev 时开发者靠 启动.bat 拉起 venv Python backend，
+            // 走打包产物会和 venv 抢 127.0.0.1:8001 端口（10048）。
+            // Prod（打包安装包后）拉起随包分发的 onedir backend-dist/liuruyan-backend.exe。
             #[cfg(not(debug_assertions))]
             {
-                // Prod：spawn PyInstaller bundled sidecar
-                let sidecar = _app
-                    .shell()
-                    .sidecar("liuruyan-backend")
-                    .expect("failed to locate sidecar binary")
-                    .args(["--host", "127.0.0.1", "--port", "8001"])
-                    .env("LIURUYAN_PROD", "1");
-
-                let (mut rx, child) = sidecar.spawn().expect("failed to spawn sidecar");
-
-                // 保存句柄，退出时清理
-                *sidecar_slot().lock().unwrap() = Some(child);
-
-                // 异步消费 sidecar 的 stdout/stderr，原样转发到 Tauri 进程日志
-                tauri::async_runtime::spawn(async move {
-                    while let Some(event) = rx.recv().await {
-                        match event {
-                            CommandEvent::Stdout(bytes) => {
-                                print!("[backend] {}", String::from_utf8_lossy(&bytes));
-                            }
-                            CommandEvent::Stderr(bytes) => {
-                                eprint!("[backend err] {}", String::from_utf8_lossy(&bytes));
-                            }
-                            CommandEvent::Error(err) => {
-                                eprintln!("[backend error] {}", err);
-                            }
-                            CommandEvent::Terminated(payload) => {
-                                eprintln!("[backend terminated] code={:?}", payload.code);
-                            }
-                            _ => {}
-                        }
-                    }
-                });
+                spawn_onedir_backend(_app);
             }
 
             Ok(())
@@ -100,27 +170,11 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|_app_handle, event| {
-            if let RunEvent::ExitRequested { .. } = event {
-                // Dev 模式 sidecar 没 spawn，也就没有 child/backend 进程要 kill；
-                // venv Python 由 启动.bat 开的独立窗口单独负责。
-                #[cfg(not(debug_assertions))]
-                {
-                    // PyInstaller onefile 有 bootloader + python 两个同名进程。
-                    // child.kill() 先跑会让 python 脱离子树 → /T /PID 就找不到孤儿了。
-                    // 所以 Windows 走 /IM（按映像名杀）+ CREATE_NO_WINDOW（防 taskkill 自己闪黑窗）。
-                    #[cfg(windows)]
-                    {
-                        use std::os::windows::process::CommandExt;
-                        const CREATE_NO_WINDOW: u32 = 0x08000000;
-                        let _ = std::process::Command::new("taskkill")
-                            .args(["/F", "/T", "/IM", "liuruyan-backend.exe"])
-                            .creation_flags(CREATE_NO_WINDOW)
-                            .output();
-                    }
-                    if let Some(child) = sidecar_slot().lock().unwrap().take() {
-                        let _ = child.kill();
-                    }
-                }
+            #[cfg(not(debug_assertions))]
+            if let RunEvent::ExitRequested { .. } | RunEvent::Exit = event {
+                kill_backend();
             }
+            #[cfg(debug_assertions)]
+            let _ = event;
         });
 }

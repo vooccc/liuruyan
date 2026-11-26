@@ -120,22 +120,28 @@ echo.
 
 :NODE_MODULES_READY
 
-rem --- 前置检查 4: backend sidecar 二进制 ---
+rem --- 前置检查 4: backend onedir 产物 ---
 set "PKG_SCRIPT=package"
-if exist "frontend\src-tauri\binaries\liuruyan-backend-x86_64-pc-windows-msvc.exe" goto :SIDECAR_READY
-if exist "backend\dist\liuruyan-backend.exe" (
-    if not exist "frontend\src-tauri\binaries" mkdir "frontend\src-tauri\binaries"
-    copy /y "backend\dist\liuruyan-backend.exe" "frontend\src-tauri\binaries\liuruyan-backend-x86_64-pc-windows-msvc.exe" >nul 2>&1
+if exist "frontend\src-tauri\backend-dist\liuruyan-backend.exe" goto :SIDECAR_READY
+if exist "backend\dist\liuruyan-backend\liuruyan-backend.exe" (
+    if exist "frontend\src-tauri\backend-dist" (
+        powershell -NoProfile -Command "$p='frontend\src-tauri\backend-dist'; $i=Get-Item $p -Force; if ($i.Attributes -band [IO.FileAttributes]::ReparsePoint) { $i.Delete() } else { Remove-Item -Recurse -Force $p }" >nul 2>&1
+    )
+    mkdir "frontend\src-tauri\backend-dist"
+    xcopy /e /i /y /q "backend\dist\liuruyan-backend\*" "frontend\src-tauri\backend-dist\" >nul 2>&1
     goto :SIDECAR_READY
 )
-if exist "..\柳如烟\frontend\src-tauri\binaries" (
-    echo [info] 检测到同级工程后端二进制，正在建立秒级软联接...
-    powershell -NoProfile -Command "New-Item -ItemType Junction -Path 'frontend\src-tauri\binaries' -Target (Resolve-Path '..\柳如烟\frontend\src-tauri\binaries') -Force" >nul 2>&1
+if exist "..\柳如烟\frontend\src-tauri\backend-dist\liuruyan-backend.exe" (
+    echo [info] 检测到同级工程后端目录，正在建立秒级软联接...
+    if exist "frontend\src-tauri\backend-dist" (
+        powershell -NoProfile -Command "$p='frontend\src-tauri\backend-dist'; $i=Get-Item $p -Force; if ($i.Attributes -band [IO.FileAttributes]::ReparsePoint) { $i.Delete() } else { Remove-Item -Recurse -Force $p }" >nul 2>&1
+    )
+    powershell -NoProfile -Command "New-Item -ItemType Junction -Path 'frontend\src-tauri\backend-dist' -Target (Resolve-Path '..\柳如烟\frontend\src-tauri\backend-dist') -Force" >nul 2>&1
 )
 
 :SIDECAR_READY
 
-if not exist "frontend\src-tauri\binaries\liuruyan-backend-x86_64-pc-windows-msvc.exe" goto :NO_SIDECAR
+if not exist "frontend\src-tauri\backend-dist\liuruyan-backend.exe" goto :NO_SIDECAR
 
 echo ============================================================
 echo [info] 检测到已就绪的后端 sidecar (liuruyan-backend.exe)

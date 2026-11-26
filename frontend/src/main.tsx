@@ -1,8 +1,10 @@
 import React, { lazy, Suspense, useEffect, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
-import CharacterWorkshop, { type WorkshopMode } from './components/CharacterWorkshop'
-import MemoryPanel from './components/MemoryPanel'
+import type { WorkshopMode } from './components/CharacterWorkshop'
+
+const CharacterWorkshop = lazy(() => import('./components/CharacterWorkshop'))
+const MemoryPanel = lazy(() => import('./components/MemoryPanel'))
 // 字体：全部走可变字体（variable），一个文件覆盖 100-900 全字重。
 // 换掉原先思源黑体的 300/400/500/700 四档静态字重 —— 那是 408 个 woff2 分片、
 // 13.6MB 全打进 Tauri 安装包，且没有 600 档，导致标题 font-weight:600 时
@@ -54,7 +56,11 @@ function StandaloneMemoryBrowser({ agentId, sessionId, onClose }: { agentId?: st
     return () => { cancelled = true }
   }, [])
 
-  return <MemoryPanel onClose={onClose} agentId={agentId} agents={agents} currentSessionId={sessionId} standalone />
+  return (
+    <Suspense fallback={null}>
+      <MemoryPanel onClose={onClose} agentId={agentId} agents={agents} currentSessionId={sessionId} standalone />
+    </Suspense>
+  )
 }
 
 function Root() {
@@ -78,21 +84,23 @@ function Root() {
     const mode = (params.get('mode') === 'create' ? 'create' : 'edit') as WorkshopMode
     const agentId = params.get('agentId') || undefined
     return (
-      <CharacterWorkshop
-        open
-        standalone
-        mode={mode}
-        agentId={agentId}
-        onClose={() => { void closeStandaloneWindow() }}
-        onAgentCreated={async () => {
-          const { emitTo } = await import('@tauri-apps/api/event')
-          await emitTo('main', 'liuruyan://agents-changed')
-        }}
-        onAgentUpdated={async () => {
-          const { emitTo } = await import('@tauri-apps/api/event')
-          await emitTo('main', 'liuruyan://agents-changed')
-        }}
-      />
+      <Suspense fallback={null}>
+        <CharacterWorkshop
+          open
+          standalone
+          mode={mode}
+          agentId={agentId}
+          onClose={() => { void closeStandaloneWindow() }}
+          onAgentCreated={async () => {
+            const { emitTo } = await import('@tauri-apps/api/event')
+            await emitTo('main', 'liuruyan://agents-changed')
+          }}
+          onAgentUpdated={async () => {
+            const { emitTo } = await import('@tauri-apps/api/event')
+            await emitTo('main', 'liuruyan://agents-changed')
+          }}
+        />
+      </Suspense>
     )
   }
 

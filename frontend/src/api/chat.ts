@@ -3,13 +3,6 @@ import { API_BASE } from './base'
 import { useAppStore } from '../stores/useAppStore'
 import { handleIdeToolRequest } from '../runtime/ideToolHandler'
 import {
-  asRuntimeNoticePayload,
-  getRuntimeNoticeRefs,
-  normalizeRouteDiagnosticsPayload,
-  normalizeRouteBudgetState,
-  normalizeRouteRuntimeSnapshot,
-} from './runtimeNormalizers'
-import {
   isRuntimeStreamEventType,
   type StreamEventType,
   type ConsultStreamEventType,
@@ -65,7 +58,7 @@ export interface ContentSegment {
   type: 'thinking' | 'text' | 'tool_call' | 'tool_result' | 'system_notice'
   content?: string          // thinking/text/tool_result 的内容文本
   kind?: string             // system_notice 的通知类型
-  payload?: RuntimeNoticePayload
+  payload?: Record<string, any>
   agent_id?: string         // 产出该片段的角色 ID（多人/征求意见场景）
   // tool_call 专用字段（多来源兼容）
   tool_name?: string         // 工具名称（渲染层优先读取）
@@ -93,103 +86,6 @@ export interface ToolCallItem {
   input?: any
   result?: string
   status: 'calling' | 'done'
-}
-
-export interface RouteSessionLoad {
-  session_id?: string
-  workers?: Record<string, number>
-  plans?: Record<string, number>
-  limits?: Record<string, number>
-  capacity?: Record<string, number | boolean>
-}
-
-export interface RouteRecentOutcomes {
-  [key: string]: number | undefined
-  task_routed?: number
-  worker_success_total?: number
-  worker_failure_total?: number
-  worker_plan_failed?: number
-  budget_warning_total?: number
-  budget_exhausted_total?: number
-  fallback_to_inline?: number
-}
-
-export interface RouteBudgetPressure {
-  tight_route_count?: number
-  warning_routes?: number
-  exhausted_routes?: number
-  warning_events?: number
-  exhausted_events?: number
-  pressure_axes?: Record<string, number>
-  limit_type_counts?: Record<string, number>
-  dominant_axis?: string
-  last_kind?: string
-  last_recorded_at?: string
-  last_snapshot?: Record<string, unknown>
-  peak_highest_usage_ratio?: number
-}
-
-export interface RouteRuntimeSnapshot {
-  session_load?: RouteSessionLoad
-  recent_outcomes?: RouteRecentOutcomes
-  budget_pressure?: RouteBudgetPressure
-}
-
-export interface RouteBudgetState {
-  warning_count: number
-  exhausted_count: number
-  limit_type: string
-  pressure_axes: string[]
-  last_snapshot: Record<string, unknown>
-  last_kind?: string
-  last_recorded_at?: string
-}
-
-export interface RuntimeNoticeRefs {
-  route_id?: string
-  worker_id?: string
-  plan_id?: string
-  plan_step_id?: string
-  plan_stage?: number
-}
-
-export interface RuntimeNoticePayload {
-  contract_version?: number
-  refs?: RuntimeNoticeRefs
-  strategy?: 'inline' | 'worker' | 'worker_plan' | string
-  confidence?: string
-  source?: string
-  task_class?: string
-  priority?: number
-  timeout?: number
-  execution_status?: string
-  task?: string
-  title?: string
-  max_steps?: number
-  runtime_snapshot?: RouteRuntimeSnapshot
-  route_diagnostics?: RouteDiagnostics
-  budget_state?: RouteBudgetState
-  depends_on?: string[]
-  // Runtime notice/card rendering fields
-  workerId?: string
-  started_at?: string
-  completed?: boolean
-  status?: string
-  description?: string
-  provider?: string
-  model?: string
-  subagent_id?: string
-  [key: string]: unknown
-}
-
-// P6 拆分：上述 5 个纯 payload 规整器已移到 ./runtimeNormalizers（顶部 import 供
-// 本文件内部使用）。此处 facade 再导出，所有现有 `from '../api/chat'` 引用不变。
-export {
-  asRuntimeNoticePayload,
-  getRuntimeNoticeRefs,
-  normalizeRouteDiagnosticsPayload,
-  normalizeRouteBudgetState,
-  normalizeRouteRuntimeSnapshot,
 }
 
 export interface Session {
@@ -255,101 +151,6 @@ export interface PeerAwareness {
   title: string
   last_active_at: string
   emotion_label: string
-}
-
-/** Runtime route task */
-export interface RuntimeTask {
-  task_id: string
-  parent_session_id: string
-  agent_id: string
-  description: string
-  model?: string | null
-  provider?: string | null
-  priority: number
-  timeout: number
-  depends_on: string[]
-  route_id?: string | null
-  plan_id?: string | null
-  plan_step_id?: string | null
-  plan_stage?: number | null
-  status: 'pending' | 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
-  result: string | null
-  error: string | null
-  retry_count: number
-  started_at: string | null
-  completed_at: string | null
-  updated_at?: string | null
-  worker_session_id?: string | null
-  trace_event_count?: number
-  notice_event_count?: number
-}
-
-export interface RuntimeTraceEvent {
-  seq: number
-  type: string
-  timestamp: string
-  text?: string
-  kind?: string
-  content?: string
-  name?: string
-  id?: string
-  tool_use_id?: string
-  input?: any
-  result?: any
-  status?: string
-  message?: string
-  worker_session_id?: string
-  parent_session_id?: string
-  payload?: Record<string, unknown>
-}
-
-export interface RuntimeTaskDetail extends RuntimeTask {
-  trace_events: RuntimeTraceEvent[]
-  notice_events: Record<string, any>[]
-}
-
-export interface RuntimePlanStep {
-  step_id: string
-  worker_id: string
-  description: string
-  priority: number
-  timeout: number
-  depends_on: string[]
-  stage: number
-  status?: RuntimeTask['status']
-  error?: string | null
-  result?: string | null
-  updated_at?: string | null
-}
-
-export interface RuntimePlan {
-  plan_id: string
-  parent_session_id: string
-  agent_id: string
-  title?: string | null
-  route_id?: string | null
-  status: 'pending' | 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
-  created_at: string
-  updated_at: string
-  worker_count: number
-  stage_count: number
-  steps?: RuntimePlanStep[]
-}
-
-export type WorkerTask = RuntimeTask
-export type WorkerTraceEvent = RuntimeTraceEvent
-export type WorkerDetail = RuntimeTaskDetail
-export type WorkerPlanStep = RuntimePlanStep
-export type WorkerPlan = RuntimePlan
-
-export interface RouteDiagnostics {
-  kind: 'policy' | 'heuristic' | 'model' | 'fallback'
-  rule_id: string
-  title: string
-  summary: string
-  matched_conditions: string[]
-  observed?: Record<string, unknown>
-  suggested_action?: string
 }
 
 export interface Skill {
@@ -741,18 +542,6 @@ export interface StreamEvent {
   id?: string
   session_id?: string
   tool_use_id?: string
-  refs?: {
-    worker_id?: string
-    route_id?: string
-    plan_id?: string
-    plan_step_id?: string
-    plan_stage?: number
-  }
-  // runtime transport 兼容：部分 worker/route 事件会把 refs 标量同时放在顶层。
-  route_id?: string
-  plan_id?: string
-  worker_id?: string
-  worker_ids?: string[]
 }
 
 export interface ConsultStreamEvent {
@@ -820,8 +609,6 @@ export async function sendMessage(
   providerId?: string,
   agentId?: string,
   signal?: AbortSignal,
-  executionMode?: 'auto' | 'inline',
-  routeMaxSteps?: number,
   clientIds?: { userClientId?: string; assistantClientId?: string },
   /** 用户从 📎 按钮上传的文件绝对路径数组（uploadChatFile 返回的 path）。
    *  后端 chat() 顶部会拼一个 "[附件]" footer 让 LLM 自动调 read_file 读。 */
@@ -832,8 +619,6 @@ export async function sendMessage(
   if (modelId) body.model = modelId
   if (providerId) body.provider = providerId
   if (agentId) body.agent_id = agentId
-  if (executionMode) body.execution_mode = executionMode
-  if (typeof routeMaxSteps === 'number') body.route_max_steps = routeMaxSteps
   if (clientIds?.userClientId) body.user_client_id = clientIds.userClientId
   if (clientIds?.assistantClientId) body.client_id = clientIds.assistantClientId
   if (attachments && attachments.length > 0) body.attachments = attachments

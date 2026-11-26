@@ -13,7 +13,8 @@ $ProjectRoot = $ProjectRoot.Trim().Trim('"')
 $ProjectRoot = [System.IO.Path]::GetFullPath($ProjectRoot)
 $FrontendDir = Join-Path $ProjectRoot "frontend"
 $LogPath = Join-Path $ProjectRoot "package_build.log"
-$SidecarExe = Join-Path $ProjectRoot "frontend\src-tauri\binaries\liuruyan-backend-x86_64-pc-windows-msvc.exe"
+$SidecarExe = Join-Path $ProjectRoot "frontend\src-tauri\backend-dist\liuruyan-backend.exe"
+$SidecarDir = Join-Path $ProjectRoot "frontend\src-tauri\backend-dist"
 $TargetDir = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path (Split-Path $ProjectRoot -Parent) "lry-target" }
 $NsisDir = Join-Path $TargetDir "release\bundle\nsis"
 
@@ -66,11 +67,14 @@ function Get-StatusLines {
     $elapsed = $now - $startTime
     $elapsedStr = "{0:hh\:mm\:ss}" -f $elapsed
 
-    $pyinstallerExe = Test-Path (Join-Path $ProjectRoot "backend\dist\liuruyan-backend.exe")
+    $pyinstallerExe = Test-Path (Join-Path $ProjectRoot "backend\dist\liuruyan-backend\liuruyan-backend.exe")
 
     $sidecar = Get-Item $SidecarExe -ErrorAction SilentlyContinue
-    $sidecarSize = if ($null -ne $sidecar) { Format-FileSize $sidecar.Length } else { "-" }
-    $sidecarReady = $null -ne $sidecar -and $sidecar.Length -gt 10000000
+    $sidecarReady = $null -ne $sidecar -and $sidecar.Length -gt 1000000
+    $sidecarBytes = if ($sidecarReady -and (Test-Path $SidecarDir)) {
+        (Get-ChildItem $SidecarDir -Recurse -File -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
+    } else { 0 }
+    $sidecarSize = if ($sidecarBytes -gt 0) { Format-FileSize $sidecarBytes } else { "-" }
 
     $bundleDir = Join-Path $TargetDir "release\bundle"
     $installer = Get-ChildItem -Path $bundleDir -Recurse -File -Include *.exe -ErrorAction SilentlyContinue |

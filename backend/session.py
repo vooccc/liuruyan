@@ -153,6 +153,7 @@ class Session:
     # 运行时（不持久化）
     _transcript_writer: Optional[TranscriptWriter] = field(default=None, repr=False)
     _session_dir: Optional[Path] = field(default=None, repr=False)
+    _details_loaded: bool = field(default=False, repr=False)
 
     def __post_init__(self):
         now = datetime.now().isoformat()
@@ -411,6 +412,15 @@ class Session:
         )
         return self.conversation_history
 
+    def ensure_details_loaded(self) -> None:
+        """按需加载会话完整历史与状态（幂等）。启动期只恢复 meta，首次访问再读 transcript。"""
+        if self._details_loaded:
+            return
+        self.load_conversation_history()
+        self.emotion_state = self.load_emotion()
+        self.mask_state = self.load_mask_state()
+        self._details_loaded = True
+
     def _allocate_message_seq(self) -> int:
         message_seq = max(1, self.next_message_seq)
         self.next_message_seq = message_seq + 1
@@ -484,6 +494,8 @@ class Session:
         client_id: Optional[str] = None,
     ) -> None:
         """追加消息到 transcript。client_id 端到端追踪，前端 dedup 用。"""
+        if not self._details_loaded:
+            self.ensure_details_loaded()
         resolved_timestamp = timestamp or datetime.now().isoformat()
         message_seq = self._allocate_message_seq()
         history_revision = self._next_history_revision()
@@ -528,6 +540,8 @@ class Session:
         message_count 视作 1（这一轮 = 一个 assistant turn；user/tool_result
         消息是 assistant 工具调用的产物，不计入用户视角消息数）。
         """
+        if not self._details_loaded:
+            self.ensure_details_loaded()
         from .main import _segments_to_anthropic_blocks
         split = _segments_to_anthropic_blocks(segments)
         assistant_blocks: List[Dict[str, Any]] = list(split["assistant_blocks"])
@@ -1372,6 +1386,7 @@ class SessionManager:
             session.save_emotion(DEFAULT_EMOTION.copy())
 
         # 保存元数据
+        session._details_loaded = True
         session.save_meta()
 
         # 注册到内存
@@ -1385,15 +1400,26 @@ class SessionManager:
         return self._sessions.get(session_id)
 
     async def get_session(self, session_id: str) -> Optional[Session]:
-        """获取会话（优先内存，回退磁盘）"""
-        if session_id in self._sessions:
-            return self._sessions[session_id]
+        """获取会话（优先内存，回退磁盘；首次访问时按需加载 transcript 与状态）"""
+        session = self._sessions.get(session_id)
+        if session is not None:
+            if not session._details_loaded:
+                lock = self._get_session_lock(session_id)
+                async with lock:
+                    if not session._details_loaded:
+                        session.ensure_details_loaded()
+            return session
 
         # 尝试从磁盘恢复
-        return await self._recover_session(session_id)
+        return await self._recover_session(session_id, load_details=True)
 
-    async def _recover_session(self, session_id: str) -> Optional[Session]:
-        """从磁盘恢复单个会话"""
+    async def _recover_session(
+        self,
+        session_id: str,
+        *,
+        load_details: bool = True,
+    ) -> Optional[Session]:
+        """从磁盘恢复单个会话（load_details=False 时仅恢复元数据，用于快速启动索引）"""
         # 两路 probe 定位真实位置（agents/* 或 council/rooms/*）
         session_dir = self._probe_session_location(session_id) or self._get_session_dir(session_id)
 
@@ -1408,10 +1434,9 @@ class SessionManager:
                     self._record_invalid_session(session_id, repair_reason, session)
                     return None
 
-                session.load_conversation_history()
-                session.emotion_state = session.load_emotion()
-                session.mask_state = session.load_mask_state()
-                session.save_meta()
+                if load_details:
+                    session.ensure_details_loaded()
+                    session.save_meta()
                 self._clear_invalid_session(session_id)
 
                 # 注册到内存
@@ -1935,7 +1960,7 @@ class SessionManager:
                     if not sdir.is_dir() or sdir.name in self._sessions:
                         continue
                     if (sdir / "session.json").exists():
-                        await self._recover_session(sdir.name)
+                        await self._recover_session(sdir.name, load_details=False)
                     # 嵌套的 worker 子会话
                     workers_dir = sdir / "workers"
                     if workers_dir.exists():
@@ -1943,7 +1968,7 @@ class SessionManager:
                             if not wdir.is_dir() or wdir.name in self._sessions:
                                 continue
                             if (wdir / "session.json").exists():
-                                await self._recover_session(wdir.name)
+                                await self._recover_session(wdir.name, load_details=False)
 
         # 2. council/rooms/<rid>/sessions/<sid>/
         rooms_dir = paths.council_rooms_dir()
@@ -1958,7 +1983,7 @@ class SessionManager:
                     if not sdir.is_dir() or sdir.name in self._sessions:
                         continue
                     if (sdir / "session.json").exists():
-                        await self._recover_session(sdir.name)
+                        await self._recover_session(sdir.name, load_details=False)
 
 
 # ====== 全局单例 ======

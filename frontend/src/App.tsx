@@ -395,20 +395,30 @@ function AppInner() {
       // 等 sidecar 起来再发第一批请求，避免头像 <img> 打到空端口被 404 负缓存
       await waitForBackend()
       try {
-        const data = await getConfig()
+        // 并发拉取 config / agents / sessions（以及有恢复目标时的 scenes），压缩首屏串行瀑布流
+        const savedCollabId = localStorage.getItem(LAST_COLLAB_KEY)
+        const configPromise = getConfig()
+        const agentsPromise = ensureDefaultAgent().catch(() => null)
+        const sessionsPromise = listSessions().catch(() => null)
+        const activeScenesPromise = savedCollabId
+          ? getActiveScenes().catch(() => null)
+          : Promise.resolve(null)
+
+        const data = await configPromise
         setConfig(data)
         setBackendOnline(true)
 
-        // 加载 agents 列表（首启兜底：后端为空时 ensureDefaultAgent 会从模板创建柳如烟，
-        //   2026-05-24 状态提升：原本这步在 Sidebar mount 时做，现在搬到 App.tsx 单点）
-        try {
-          const agentList = await ensureDefaultAgent()
+        const [agentList, response, activeScenesResp] = await Promise.all([
+          agentsPromise,
+          sessionsPromise,
+          activeScenesPromise,
+        ])
+        if (agentList) {
           setAgents(agentList)
-        } catch { /* agents 加载失败不影响主流程 */ }
+        }
 
         // 自动加载会话列表并选中默认会话
-        try {
-          const response = await listSessions()
+        if (response) {
           notifyInvalidSessions(response.session_warnings?.invalid_session_count)
           const sessions = response.sessions
           // 2026-09-29：恢复目标跳过协作会话——协作会话只能从议事厅进（RoundtableList /
@@ -439,18 +449,14 @@ function AppInner() {
           // null，协作界面照常打开（与从列表点开已结束会话的行为一致）。
           // 注意 primaryView 读的是 useState 初始化时的 localStorage 快照。
           try {
-            const savedCollabId = localStorage.getItem(LAST_COLLAB_KEY)
             if (savedCollabId) {
               const collabSess = sessions.find(s => s.id === savedCollabId)
               if (collabSess && collabSess.metadata?.collab_type === 'scene') {
                 const sceneId = collabSess.metadata.scene_id as string | undefined
-                let matchedScene: SceneInfo | null = null
-                if (sceneId) {
-                  try {
-                    const { scenes } = await getActiveScenes()
-                    matchedScene = scenes.find(s => s.id === sceneId) || null
-                  } catch { /* 场景快照失败 → 无阶段信息打开，不影响历史 */ }
-                }
+                const matchedScene: SceneInfo | null =
+                  sceneId && activeScenesResp
+                    ? (activeScenesResp.scenes.find(s => s.id === sceneId) || null)
+                    : null
                 setExistingCollabSessionId(savedCollabId)
                 setActiveScene(matchedScene)
                 setShowCollabChat(true)
@@ -459,7 +465,7 @@ function AppInner() {
               }
             }
           } catch { /* 协作恢复失败不影响主流程 */ }
-        } catch { /* 会话列表加载失败不影响主流程 */ }
+        }
       } catch (err) {
         console.error('Failed to fetch config:', err)
         setBackendOnline(false)
@@ -1077,9 +1083,7 @@ function AppInner() {
            *  timelineMarkers 全部迁到 useAppStore + module-level，理论上 Chat unmount/remount
            *  不再丢状态，可以恢复条件渲染。但仍保留 always-mount，原因：
            *    1) 切换更快（无 React reconciliation / re-mount 开销）
-           *    2) useChatSubmitFlow 内部还有 routedProgress* / schedulerPanorama*Cache 等 ref
-           *       未迁移（P1.4c 推迟），always-mount 保证它们也不会蒸发
-           *    3) 多个长任务并发时这个开销差距更明显
+           *    2) 多个长任务并发时保持局部状态连续性
            *  架构决策文档：docs/architecture_spec.md */}
           <div
             className="chat-main-shell"

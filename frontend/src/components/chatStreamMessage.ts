@@ -115,11 +115,6 @@ export function applyStreamEventToMessage(message: MessageType, event: ChatStrea
   const segments = ensureMessageSegments(updated)
   const agentId = event.agent_id
 
-  // 过滤掉带 runtime task refs 的内部旁路事件，避免混入主消息文本。
-  if (event.refs?.worker_id) {
-    return updated
-  }
-
   if (event.type === 'content') {
     const textChunk = normalizeContentChunk(event.content || '')
     // 空 chunk noop：backend 在 thinking→text 转折等场景会推空 content event，

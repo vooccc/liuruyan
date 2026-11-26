@@ -1,4 +1,4 @@
-﻿# 柳如烟打包进度监听器
+# 柳如烟打包进度监听器
 # 在新窗口运行，每 15 秒打印一次当前进度
 # 打包主流程结束后用 taskkill 关掉本窗口
 
@@ -7,7 +7,8 @@ $Host.UI.RawUI.WindowTitle = "柳如烟打包进度"
 $ErrorActionPreference = "SilentlyContinue"
 
 $nuitkaDir = "./backend\dist_nuitka"
-$sidecarExe = "./frontend\src-tauri\binaries\liuruyan-backend-x86_64-pc-windows-msvc.exe"
+$pyinstallerDir = "./backend\dist\liuruyan-backend"
+$sidecarExe = "./frontend\src-tauri\backend-dist\liuruyan-backend.exe"
 $msiDir = "./release\bundle\msi"
 
 Write-Host "============================================" -ForegroundColor Cyan
@@ -23,14 +24,14 @@ while ($true) {
     $elapsed = $now - $startTime
     $elapsedStr = "{0:hh\:mm\:ss}" -f $elapsed
 
-    # Nuitka 编译进度
+    # Nuitka / PyInstaller onedir 编译进度
     $oFiles = Get-ChildItem $nuitkaDir -Filter "*.o" -Recurse -ErrorAction SilentlyContinue
     $oCount = ($oFiles | Measure-Object).Count
-    $nuitkaExe = Test-Path "$nuitkaDir\liuruyan-backend.exe"
+    $nuitkaExe = (Test-Path "$nuitkaDir\liuruyan-backend.exe") -or (Test-Path "$pyinstallerDir\liuruyan-backend.exe")
 
-    # sidecar exe
+    # sidecar exe (onedir launcher exe is ~3-8MB)
     $sidecar = Get-Item $sidecarExe -ErrorAction SilentlyContinue
-    $sidecarReady = $null -ne $sidecar -and $sidecar.Length -gt 10000000
+    $sidecarReady = $null -ne $sidecar -and $sidecar.Length -gt 1000000
 
     # MSI 产物
     $msi = Get-ChildItem "$msiDir\*.msi" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1

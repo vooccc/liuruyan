@@ -158,12 +158,15 @@ class MCPController:
         )
 
     async def shutdown(self) -> None:
+        sids = list(self._servers.keys())
         async with self._lock:
             tasks = [
-                asyncio.create_task(self._stop_one(sid)) for sid in list(self._servers.keys())
+                asyncio.create_task(self._stop_one_locked(sid)) for sid in sids
             ]
             if tasks:
                 await asyncio.gather(*tasks, return_exceptions=True)
+        for sid in sids:
+            self._emit_status(sid)
         logger.info("[MCP-CTRL] shutdown done")
 
     async def add_or_update_server(self, server_id: str, config: MCPServerConfig) -> MCPServerStatus:

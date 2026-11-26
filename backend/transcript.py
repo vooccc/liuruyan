@@ -239,18 +239,6 @@ class TranscriptWriter:
             "timestamp": timestamp or datetime.now().isoformat()
         })
 
-    async def append_worker(self, worker_id: str, status: str, result: str = None, timestamp: str = None) -> None:
-        """追加一条 Worker 状态变更"""
-        entry = {
-            "type": "worker",
-            "worker_id": worker_id,
-            "status": status,
-            "timestamp": timestamp or datetime.now().isoformat()
-        }
-        if result is not None:
-            entry["result"] = result
-        await self.append(entry)
-
     async def close(self) -> None:
         """关闭文件句柄"""
         if self._file:

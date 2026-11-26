@@ -401,7 +401,7 @@ export interface AskStateEntry {
 }
 export type AskStatesByAskId = Record<string, AskStateEntry>
 
-type RuntimeVariant = 'chat' | 'collab' | 'worker'
+type RuntimeVariant = 'chat' | 'collab'
 
 function hasFollowingRuntimeDetail(segments: ContentSegment[], segmentIndex: number) {
   return segments.slice(segmentIndex + 1).some((nextSegment) => (
@@ -488,12 +488,6 @@ export function RuntimeThinkingBlock({
   const [thinkingBodyMinHeight, setThinkingBodyMinHeight] = useState<number | null>(null)
 
   if (!content.trim()) return null
-
-  if (variant === 'worker') {
-    return (
-      <pre key={blockKey} className="worker-trace-pre">{content}</pre>
-    )
-  }
 
   if (variant === 'collab') {
     // 2026-09-30 P1 打磨：collab 思考块支持独立折叠（头部可点 + 渐进收起），
@@ -720,21 +714,6 @@ export function RuntimeNoticeBlock({
   const compactNotice = false
   const showCompactText = !hasFollowingDetail
 
-  if (variant === 'worker') {
-    return (
-      <div key={blockKey} className="worker-trace-stack">
-        {kind && (
-          <div className="worker-trace-meta-line">
-            kind: <code className="worker-inline-code">{kind}</code>
-          </div>
-        )}
-        {(!compactNotice || showCompactText) && (
-          <pre className="worker-trace-pre">{normalizedContent}</pre>
-        )}
-      </div>
-    )
-  }
-
   if (variant === 'collab') {
     return (
       <div
@@ -824,19 +803,6 @@ export function RuntimeToolBlock({
       const parsed = JSON.parse(resultContent.trim())
       if (isPlainObject(parsed)) resultObj = parsed
     } catch { /* 非 JSON，走文本 */ }
-  }
-
-  if (variant === 'worker') {
-    return (
-      <div key={blockKey} className="worker-trace-stack">
-        {hasArgs && (
-          <pre className="worker-trace-pre">{argsText}</pre>
-        )}
-        {hasResult && (
-          <pre className="worker-trace-pre">{resultText}</pre>
-        )}
-      </div>
-    )
   }
 
   if (variant === 'collab') {
@@ -1531,17 +1497,6 @@ export function RuntimeChainSegments({
                 content={segment.content || ''}
               />
             )
-          }
-
-          // 禁用 SchedulerPanoramaCard
-          if (variant === 'chat' && segment.kind === 'scheduler_panorama') {
-            return null
-            // return (
-            //   <SchedulerPanoramaCard
-            //     key={`${messageId}-scheduler-${segmentIndex}`}
-            //     segment={segment}
-            //   />
-            // )
           }
 
           // 渲染子代理卡片

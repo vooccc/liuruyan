@@ -46,6 +46,7 @@ src-tauri/target/
 frontend/src-tauri/target/
 frontend/src-tauri/binaries/*.exe
 !frontend/src-tauri/binaries/.gitkeep
+frontend/src-tauri/backend-dist/
 
 # OS / Editor
 .DS_Store

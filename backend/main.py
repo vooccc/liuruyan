@@ -70,13 +70,8 @@ from backend.orchestrator import (
     END_RESOLVED, END_CANCELLED, END_TTL_EXPIRED, END_USER_INTERRUPT,
 )
 from backend.runtime_protocol import (
-    build_runtime_notice_payload,
     build_runtime_transport_event as _build_runtime_transport_event,
     iter_runtime_transport_events_from_payload as _iter_runtime_transport_events_from_payload,
-)
-from backend.runtime_route_history import (
-    list_session_route_history,
-    summarize_route_history_outcomes,
 )
 from backend.runtime_model_config import (
     _configure_runtime_model,
@@ -136,44 +131,42 @@ async def lifespan(app: FastAPI):
     except Exception as e:  # noqa: BLE001
         logger.warning("[FAST_CONTEXT] apply fast context config failed (non-fatal): %s", e)
 
-    # 清理 7 天前的写前备份快照 + jsonl 审计超阈值滚动
-    try:
-        from backend.tools.defense.backup import cleanup_old_backups, rotate_audit_log_if_needed
-        removed = cleanup_old_backups(retention_days=7)
-        if removed:
-            logger.info("[BACKUP] cleaned %s stale backup snapshot(s)", removed)
-        archived = rotate_audit_log_if_needed(max_bytes=10 * 1024 * 1024)
-        if archived:
-            logger.info("[BACKUP] rotated audit log to %s", archived.name)
-    except Exception as e:
-        logger.warning("[BACKUP] cleanup failed (non-fatal): %s", e)
+    # 清理 7 天前备份 + 记忆温度衰减：全是磁盘遍历，改在后台线程异步跑，不阻塞 uvicorn bind 端口
+    def _run_startup_maintenance() -> None:
+        try:
+            from backend.tools.defense.backup import cleanup_old_backups, rotate_audit_log_if_needed
+            removed = cleanup_old_backups(retention_days=7)
+            if removed:
+                logger.info("[BACKUP] cleaned %s stale backup snapshot(s)", removed)
+            archived = rotate_audit_log_if_needed(max_bytes=10 * 1024 * 1024)
+            if archived:
+                logger.info("[BACKUP] rotated audit log to %s", archived.name)
+        except Exception as e:
+            logger.warning("[BACKUP] cleanup failed (non-fatal): %s", e)
 
-    # 启动时跑一次记忆温度衰减：把超过 TEMP_DECAY_DAYS 天未更新的 warm 降到 cold
-    # 失败不影响启动（best-effort）
-    try:
-        from backend.agent_config import get_agent_manager
-        from backend.memory_manager import MemoryManager
-        agent_mgr = get_agent_manager()
-        total_changed = 0
-        for agent_info in agent_mgr.list_agents():
-            agent_id = agent_info.get("id") if isinstance(agent_info, dict) else None
-            if not agent_id:
-                continue
-            try:
-                mm = MemoryManager(agent_id=agent_id)
-                # force=True：启动钩子必跑，不受运行时节流闸约束
-                # （MemoryManager 是新建实例，_last_decay_ts=0，本来也不会被拦，
-                # 显式传 True 是为了语义清晰——"启动时强制扫一次"是合同的一部分）
-                changed = mm.apply_temp_decay(force=True)
-                if changed:
-                    total_changed += changed
-                    logger.info("[TEMP_DECAY] %s: %s line(s) warm→cold", agent_id, changed)
-            except Exception as e:  # noqa: BLE001
-                logger.warning("[TEMP_DECAY] %s failed (non-fatal): %s", agent_id, e)
-        if total_changed:
-            logger.info("[TEMP_DECAY] startup total: %s line(s) decayed", total_changed)
-    except Exception as e:  # noqa: BLE001
-        logger.warning("[TEMP_DECAY] startup pass failed (non-fatal): %s", e)
+        try:
+            from backend.agent_config import get_agent_manager
+            from backend.memory_manager import MemoryManager
+            agent_mgr = get_agent_manager()
+            total_changed = 0
+            for agent_info in agent_mgr.list_agents():
+                agent_id = agent_info.get("id") if isinstance(agent_info, dict) else None
+                if not agent_id:
+                    continue
+                try:
+                    mm = MemoryManager(agent_id=agent_id)
+                    changed = mm.apply_temp_decay(force=True)
+                    if changed:
+                        total_changed += changed
+                        logger.info("[TEMP_DECAY] %s: %s line(s) warm→cold", agent_id, changed)
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("[TEMP_DECAY] %s failed (non-fatal): %s", agent_id, e)
+            if total_changed:
+                logger.info("[TEMP_DECAY] startup total: %s line(s) decayed", total_changed)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[TEMP_DECAY] startup pass failed (non-fatal): %s", e)
+
+    _maintenance_task = asyncio.create_task(asyncio.to_thread(_run_startup_maintenance))
 
     # Phase 1B-1: AgentActor 心跳骨架（默认 OFF；LIURUYAN_AGENT_TICK=1 启用）
     from backend.core.runtime_bootstrap import (
@@ -227,9 +220,9 @@ async def lifespan(app: FastAPI):
         _title_gen_sub = None
 
     # v2 E-3.5: Phase E channels 系统装配（默认 OFF；LIURUYAN_V2_CHANNELS=1 启用）
-    # ChannelStore + ChannelManager + InboundRouter 三件套；adapter 实现层
-    # （dingtalk / feishu / web 等）的 factory 注册留给 E-4 子刀。失败 non-fatal。
+    # 外部渠道建连（钉钉/飞书/企微/Matrix）走后台任务异步完成，不阻塞 uvicorn 绑定端口。
     _v2_channels = None
+    _v2_channels_task: Optional[asyncio.Task] = None
     _v2_flag_raw = os.getenv("LIURUYAN_V2_CHANNELS", "")
     logger.info("[v2:channels] LIURUYAN_V2_CHANNELS env = %r", _v2_flag_raw)
     try:
@@ -239,33 +232,43 @@ async def lifespan(app: FastAPI):
         elif _message_bus is None:
             logger.warning("[v2:channels] _message_bus is None, skipping setup")
         else:
-            logger.info("[v2:channels] flag ON, calling setup_v2_channels...")
-            _v2_channels = await setup_v2_channels(_message_bus)
-            if _v2_channels is None:
-                logger.warning("[v2:channels] setup returned None (see logger errors)")
-            else:
-                _statuses = _v2_channels.manager.list_status()
-                _kinds = _v2_channels.manager.registered_channels()
-                logger.info(
-                    "[v2:channels] setup complete: kinds=%s channels=%s web=%s",
-                    _kinds, len(_statuses), _v2_channels.web_channel is not None,
-                )
-                for _info in _statuses:
-                    logger.info(
-                        "[v2:channels]   - %s channel=%s status=%s err=%s",
-                        _info.config_key, _info.channel, _info.status.value,
-                        _info.last_error[:120] if _info.last_error else '',
-                    )
+            logger.info("[v2:channels] flag ON, scheduling setup_v2_channels in background...")
+
+            async def _setup_v2_channels_async():
+                nonlocal _v2_channels
+                try:
+                    handle = await setup_v2_channels(_message_bus)
+                    _v2_channels = handle
+                    if handle is None:
+                        logger.warning("[v2:channels] setup returned None (see logger errors)")
+                    else:
+                        _statuses = handle.manager.list_status()
+                        _kinds = handle.manager.registered_channels()
+                        logger.info(
+                            "[v2:channels] setup complete: kinds=%s channels=%s web=%s",
+                            _kinds, len(_statuses), handle.web_channel is not None,
+                        )
+                        for _info in _statuses:
+                            logger.info(
+                                "[v2:channels]   - %s channel=%s status=%s err=%s",
+                                _info.config_key, _info.channel, _info.status.value,
+                                _info.last_error[:120] if _info.last_error else '',
+                            )
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    logger.error("[v2:channels] background bootstrap failed (non-fatal): %s", e, exc_info=True)
+
+            _v2_channels_task = asyncio.create_task(_setup_v2_channels_async())
     except Exception as e:
         logger.error("[v2:channels] bootstrap failed (non-fatal): %s", e, exc_info=True)
 
     logger.info("[v2:subagent] legacy scheduler bootstrap skipped")
 
-    # MCP 子系统装配。设计文档：docs/MCP_DESIGN.md
-    # 默认 ON（M1+M2+M3+M4 全部稳定，61 测试绿）；想关 → LIURUYAN_MCP=0
-    # bootstrap 失败 non-fatal——单 server 启动失败时它自己标 DEGRADED，不影响主进程
+    # MCP 子系统装配：先挂 SSE/tool_bridge，再异步后台 bootstrap，避免外部 stdio MCP 握手拖慢启动
     _mcp_flag = (os.getenv("LIURUYAN_MCP", "1") or "1").strip().lower()
     _mcp_enabled = _mcp_flag not in ("0", "false", "no", "off")
+    _mcp_boot_task: Optional[asyncio.Task] = None
     logger.info("[MCP] LIURUYAN_MCP=%s", _mcp_enabled)
     if _mcp_enabled:
         try:
@@ -273,16 +276,23 @@ async def lifespan(app: FastAPI):
             from backend.mcp.tool_bridge import attach_to_controller as _attach_mcp_bridge
             from backend.mcp.sse_bridge import attach_to_controller as _attach_mcp_sse
             from backend.mcp.watcher import get_watcher as _get_mcp_watcher
-            # 注意装配顺序：SSE 先 attach（拿初始 status 推送），再 tool_bridge（挂工具），
-            # 最后 bootstrap（启动 server → 触发状态事件）
+            # 先同步挂 SSE 与 tool_bridge，保证前端连上就能接收实时状态变化
             _attach_mcp_sse()
             _attach_mcp_bridge()
-            await _get_mcp_controller().bootstrap()
-            # watcher 启 bootstrap 之后——避免 bootstrap 自己触发一次 reconcile
-            await _get_mcp_watcher().start()
-            logger.info("[MCP] bootstrap done (+ sse bridge + config watcher)")
+
+            async def _bootstrap_mcp_async() -> None:
+                try:
+                    await _get_mcp_controller().bootstrap()
+                    await _get_mcp_watcher().start()
+                    logger.info("[MCP] bootstrap done (+ sse bridge + config watcher)")
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("[MCP] bootstrap failed (non-fatal): %s", e, exc_info=True)
+
+            _mcp_boot_task = asyncio.create_task(_bootstrap_mcp_async())
         except Exception as e:  # noqa: BLE001
-            logger.warning("[MCP] bootstrap failed (non-fatal): %s", e, exc_info=True)
+            logger.warning("[MCP] setup failed (non-fatal): %s", e, exc_info=True)
 
     # ACP delegate tool 注册（方向 B：LLM 调外部 ACP agent 如 Claude Code）
     # 默认 ON；LIURUYAN_ACP_DELEGATE=0 关闭。失败 non-fatal（不影响主对话）
@@ -319,15 +329,20 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        if not _maintenance_task.done():
+            _maintenance_task.cancel()
+            await asyncio.gather(_maintenance_task, return_exceptions=True)
         # 量化 desk 定时调度收尾
         try:
             from backend.quant.scheduler import stop_scheduler as _stop_quant_sched
             await _stop_quant_sched()
         except Exception:
             pass
-        # MCP 关停：必须在 buses / pools 之前——StatefulMCPClient 内部跑独立 task，
-        # cross-task cancellation safeguard
+        # MCP 关停：先停未完成的后台 bootstrap，再安全停 watcher / controller
         if _mcp_enabled:
+            if _mcp_boot_task is not None and not _mcp_boot_task.done():
+                _mcp_boot_task.cancel()
+                await asyncio.gather(_mcp_boot_task, return_exceptions=True)
             try:
                 from backend.mcp.controller import get_controller as _get_mcp_controller_sd
                 from backend.mcp.watcher import get_watcher as _get_mcp_watcher_sd
@@ -341,13 +356,15 @@ async def lifespan(app: FastAPI):
             await get_cron_scheduler().stop()
         await shutdown_agent_actors()
 
-        # v2 E-3.5: 拆 channels 系统（必须在拆 MessageBus 之前——router 内部
-        # 还在消费 bus；按 02_runtime_core § 11 优雅关闭顺序"先停 channels 停
-        # 接收 → drain MessageBus"）
+        # v2 E-3.5: 拆 channels 系统（先停未完成的后台建连 task，再停已建好的 channels）
         try:
-            if _v2_channels is not None:
-                from backend.v2_bootstrap import teardown_v2_channels
-                await teardown_v2_channels(_v2_channels)
+            if _v2_channels_task is not None and not _v2_channels_task.done():
+                _v2_channels_task.cancel()
+                await asyncio.gather(_v2_channels_task, return_exceptions=True)
+            from backend.v2_bootstrap import get_v2_channels_handle, teardown_v2_channels
+            _active_channels = _v2_channels or get_v2_channels_handle()
+            if _active_channels is not None:
+                await teardown_v2_channels(_active_channels)
         except Exception as e:
             logger.warning("[v2:channels] teardown failed (non-fatal): %s", e)
 
@@ -410,8 +427,6 @@ class ChatRequest(BaseModel):
     # 透传给 resolve_call_model_config 走严格匹配路径，避免静默走错家。
     provider: Optional[str] = None
     agent_id: Optional[str] = None  # 新增：智能体 ID
-    execution_mode: str = "auto"
-    route_max_steps: int = 6
     # 前端为本轮 user / assistant 各生成的 UUID，端到端追踪用于 dedup（治根 segments 漂移问题）
     client_id: Optional[str] = None        # 本轮 assistant message 的 client_id
     user_client_id: Optional[str] = None   # 本轮 user message 的 client_id
@@ -1474,11 +1489,6 @@ async def chat(request: ChatRequest, http_request: Request = None):
         agent,
     )
 
-    # 召回上一轮 plan 合并交付（_deliver_plan_final_result 砍了之后 main agent 失忆补救）。
-    # 找到未消化的 worker_plan_completed entry → 拼成 system_extra 注入。
-    # 详见 _consume_pending_plan_results docstring 和 .lry/rules/06-worker-channel-separation.md
-    pending_plan_hint = None
-
     if request.stream:
         async def generate():
             current_user_message = request.message
@@ -1590,7 +1600,6 @@ async def chat(request: ChatRequest, http_request: Request = None):
                                     stream=True,
                                     session_id=effective_session_id,
                                     conversation_history=cur_session_history,
-                                    system_extra=pending_plan_hint,
                                     recall_context=recall_context if is_first_turn else None,
                                     defer_refine=True,
                                     user_message_already_in_history=True,
@@ -1614,15 +1623,7 @@ async def chat(request: ChatRequest, http_request: Request = None):
                             await merged_queue.put((AGENT_SENTINEL, None))
 
                     async def pump_sidecar():
-                        """消费 sse_manager 旁路事件（engine.spawn 在工具 await 内推送时，此协程不阻塞）。
-
-                        职责切分（2026-05-16 修）：
-                        - chat SSE = main agent 自己的事件（thinking / text / tool_use / system_notice）
-                        - sse_manager 独立长连接（useDispatchEventConsumer）= 跨请求 session 事件
-
-                        chat 路径过滤掉带 `worker_id` / `route_id` 的历史旁路事件，仅放行真正属于
-                        主对话的 system_notice（engine.spawn 推的子代理事件等）。
-                        """
+                        """消费 sse_manager 旁路事件（engine.spawn 在工具 await 内推送时，此协程不阻塞）。"""
                         try:
                             last_event_id = None
                             client_last_event_id = (
@@ -1635,9 +1636,6 @@ async def chat(request: ChatRequest, http_request: Request = None):
                                 except ValueError:
                                     pass
                             async for event in sse_manager.subscribe(effective_session_id, last_event_id=last_event_id):
-                                # 过滤 worker / dispatch 事件：它们归独立长连接消费，不再混入 chat SSE
-                                if isinstance(event, dict) and (event.get("worker_id") or event.get("route_id")):
-                                    continue
                                 await merged_queue.put(("sidecar", event))
                         except asyncio.CancelledError:
                             raise
@@ -1959,7 +1957,6 @@ async def chat(request: ChatRequest, http_request: Request = None):
                     stream=False,
                     session_id=effective_session_id,
                     conversation_history=session_history,
-                    system_extra=pending_plan_hint,
                     recall_context=recall_context,
                     defer_refine=True,
                     user_message_already_in_history=prefilled_user_message,
@@ -3081,25 +3078,6 @@ async def session_events_stream(session_id: str, request: Request):
             "X-Accel-Buffering": "no",
         },
     )
-
-
-@app.get("/sessions/{session_id}/route-history")
-async def get_session_route_history(session_id: str, limit: int = 50):
-    """获取会话级调度路由历史 ledger。"""
-    session_mgr = get_session_manager()
-    session = await session_mgr.get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=404, detail="会话不存在")
-    if session.session_type != "main":
-        raise HTTPException(status_code=400, detail="只能在主会话上查看路由历史")
-
-    bounded_limit = max(1, min(limit, 200))
-    routes = list_session_route_history(session, limit=bounded_limit, newest_first=True)
-    summary = summarize_route_history_outcomes(session, limit=bounded_limit)
-    return {
-        "routes": routes,
-        "summary": summary,
-    }
 
 
 # ====== 跨角色消息通道 API (Phase 3.1) ======

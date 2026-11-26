@@ -1,10 +1,5 @@
 /**
  * 增强文本块 - 支持打字机效果的文本渲染
- *
- * 职责：
- * 1. 检测最终结果回流（worker_result）
- * 2. 应用打字机效果
- * 3. 完成后触发仪式感动画
  */
 
 import { useState, useEffect } from 'react'
@@ -13,8 +8,6 @@ import { animationSystem } from '../lib/animationSystem'
 
 interface EnhancedTextBlockProps {
   content: string
-  isWorkerResult?: boolean
-  isFinalMerge?: boolean
   enableTypewriter?: boolean
   className?: string
   renderMarkdown?: (text: string) => string
@@ -23,9 +16,7 @@ interface EnhancedTextBlockProps {
 
 export function EnhancedTextBlock({
   content,
-  isWorkerResult = false,
-  isFinalMerge = false,
-  enableTypewriter = true,
+  enableTypewriter = false,
   className = '',
   renderMarkdown,
   onComplete,
@@ -34,11 +25,10 @@ export function EnhancedTextBlock({
   const [isComplete, setIsComplete] = useState(false)
 
   useEffect(() => {
-    // 只对最终结果回流启用打字机效果
-    if ((isWorkerResult || isFinalMerge) && enableTypewriter && content.trim()) {
+    if (enableTypewriter && content.trim()) {
       setShowTypewriter(true)
     }
-  }, [isWorkerResult, isFinalMerge, enableTypewriter, content])
+  }, [enableTypewriter, content])
 
   const handleTypewriterComplete = async () => {
     setIsComplete(true)

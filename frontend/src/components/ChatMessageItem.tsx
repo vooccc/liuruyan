@@ -14,44 +14,6 @@ import { CheckCircle2 } from 'lucide-react'
 import UserMessageAttachments from './UserMessageAttachments'
 import { parseUserMessageAttachments, type UserMessageAttachment } from './userAttachmentFooter'
 
-function isRouteSubmissionTextSegment(segment: ContentSegment) {
-  if (segment.type !== 'text') return false
-  const content = String(segment.content || '').trim()
-  return content.startsWith('Router 选择 ')
-}
-
-function hasWorkerResultNotice(segments: ContentSegment[] | undefined) {
-  return segments?.some((segment) => (
-    segment.type === 'system_notice' && segment.kind === 'worker_result'
-  ))
-}
-
-function hasFinalMergeText(message: MessageType) {
-  const segments = message.segments || []
-  const hasWorkerResult = hasWorkerResultNotice(segments)
-  const hasTextSegment = segments.some((segment) => segment.type === 'text')
-  return hasWorkerResult && hasTextSegment && !message.isStreaming
-}
-
-function hasTaskRoutedNotice(segments: ContentSegment[] | undefined) {
-  return Boolean(segments?.some((segment) => (
-    segment.type === 'system_notice' && segment.kind === 'task_routed'
-  )))
-}
-
-function getVisibleChatSegments(
-  segments: ContentSegment[] | undefined,
-  hasTaskRouteNotice: boolean,
-) {
-  if (!segments?.length) return []
-  if (!hasTaskRouteNotice) return segments
-
-  return segments.filter((segment) => {
-    if (isRouteSubmissionTextSegment(segment)) return false
-    return true
-  })
-}
-
 interface AskUserAnswerPayload {
   kind: 'ask_user_answer'
   answers: Array<{ question?: string; answer?: string }>
@@ -161,11 +123,7 @@ function ChatMessageItem({
   // v4 (2026-05-22) L2 原地编辑：本地展开/收起 state，不上提到父级
   // （编辑器是组件局部 UI 模态，没必要污染父级 store / re-render）
   const [isInplaceEditing, setIsInplaceEditing] = useState(false)
-  const hasTaskRouteNotice = hasTaskRoutedNotice(message.segments || [])
-  const rawVisibleSegments = getVisibleChatSegments(
-    message.segments || [],
-    hasTaskRouteNotice,
-  )
+  const rawVisibleSegments = message.segments || []
 
   // 用户消息：把 backend 拼在 message 末尾的"[附件 ...]\n- /path"footer 抽出来，
   // text segment 展示用 cleanedText（不让用户气泡里出现一片裸路径），footer 里的图
@@ -199,8 +157,6 @@ function ChatMessageItem({
     : null
   const hasVisibleSegments = visibleSegments.length > 0 && !askUserAnswerPayload
   const hasUserAttachments = userAttachments.length > 0
-  const isFinalMerge = hasFinalMergeText(message)
-  const hasWorkerResult = hasWorkerResultNotice(message.segments)
 
   // 2026-05-17：发送 → 首块到达之间的"等待占位"判定。
   // 流式中且 segments 全空 + content 全空 → 显示「正在思考...」+ Brain 图标，
@@ -328,13 +284,10 @@ function ChatMessageItem({
             const displayText = parseStoredRuntimeMessageContent(message.content || '').text
             if (!displayText.trim()) return null
 
-            // 使用增强文本块（支持打字机效果）
+            // 使用增强文本块
             return (
               <EnhancedTextBlock
                 content={displayText}
-                isWorkerResult={hasWorkerResult}
-                isFinalMerge={isFinalMerge}
-                enableTypewriter={isFinalMerge}
                 renderMarkdown={renderMarkdown}
               />
             )
@@ -364,7 +317,7 @@ function ChatMessageItem({
           )}
         </div>
 
-        {!message.isStreaming && message.content && !hasTaskRouteNotice && !isInplaceEditing && (
+        {!message.isStreaming && message.content && !isInplaceEditing && (
           <div className="message-actions">
             {/* v6.1 按钮合并：原「修改并重新提问」（RotateCcw，截断重发）并入
                 内联编辑器的「发送」按钮；PenLine 成为唯一编辑入口 ——

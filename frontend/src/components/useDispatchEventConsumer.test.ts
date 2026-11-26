@@ -2,19 +2,19 @@ import { describe, expect, it } from 'vitest'
 import { nextReplayCursor, parseSseFrame } from './useDispatchEventConsumer'
 
 describe('dispatch SSE reconnect cursor', () => {
-  it('解析 flat event identity 与 refs', () => {
+  it('解析事件基础字段与 payload', () => {
     const parsed = parseSseFrame(JSON.stringify({
-      type: 'worker_progress',
+      type: 'session_token_usage',
       event_id: 9,
       event_seq: 9,
-      worker_id: 'worker-1',
+      payload: { total: 1200 },
       session_id: 'sid',
     }))
 
     expect(parsed).toMatchObject({
-      type: 'worker_progress',
+      type: 'session_token_usage',
       event_id: 9,
-      refs: { worker_id: 'worker-1' },
+      payload: { total: 1200 },
     })
   })
 

@@ -86,59 +86,17 @@ export function isRitualMarker(item: ChatTimelineItem): item is RitualMarker {
   return (item as RitualMarker).kind === 'ritual_marker'
 }
 
-function getPrimarySystemNoticeSegment(message: MessageType): ContentSegment | null {
-  if (message.role !== 'assistant') return null
-  const segments = message.segments || []
-  return segments.find((segment) => segment.type === 'system_notice') || null
-}
-
-// 后端事件流（worker_*/task_routed）已经从 transcript 抽离，不再以 assistant message 形式持久化。
-// 此集合用于过滤历史 transcript 里残留的事件流 message——这些是架构改造前写入的，新代码不再产生。
-// 历史 session 渲染时直接跳过，避免"完整报告跑到用户消息上方"等顺序错乱。
-const LEGACY_EVENT_STREAM_NOTICE_KINDS = new Set<string>([
-  'worker_started',
-  'worker_heartbeat',
-  'worker_tool_progress',
-  'worker_tool_result_progress',
-  'worker_retry',
-  'worker_failed',
-  'worker_cancelled',
-  'worker_waiting_dependencies',
-  'worker_dependency_ready',
-  'worker_plan_submitted',
-  'worker_plan_completed',
-  'worker_plan_failed',
-  'worker_result',
-  'task_routed',
-  'task_route_fallback',
-])
-
-// 仅保留 LEGACY 历史 transcript 残留事件过滤（新代码已不写入这些 kind，过滤
-// 历史数据避免老 session 渲染错乱）。
-function filterLegacyEventStreamMessages(messages: MessageType[]): MessageType[] {
-  return messages.filter((message) => {
-    if (message.role !== 'assistant') return true
-    if (message.ephemeral) return true
-    const notice = getPrimarySystemNoticeSegment(message)
-    if (!notice) return true
-    return !LEGACY_EVENT_STREAM_NOTICE_KINDS.has(notice.kind || '')
-  })
-}
-
 export function mergeTimelineItems(messages: MessageType[], markers: RitualMarker[]): ChatTimelineItem[] {
-  const visibleMessages = filterLegacyEventStreamMessages(messages)
-  if (markers.length === 0) return [...visibleMessages]
+  if (markers.length === 0) return [...messages]
 
-  // messages 保留 transcript append 顺序（即时间序），不参与排序——
-  // 否则 worker_result 等后写入消息若 timestamp 早于用户消息，会被甩到上方。
-  // markers 按 timestamp 走 merge 插入到 messages 中合适位置。
+  // messages 保留 append 顺序（即时间序），markers 按 timestamp 插入对应位置。
   const sortedMarkers = [...markers].sort((a, b) => (
     new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime()
   ))
 
   const result: ChatTimelineItem[] = []
   let mIdx = 0
-  for (const message of visibleMessages) {
+  for (const message of messages) {
     const messageTime = new Date(message.timestamp || 0).getTime()
     while (mIdx < sortedMarkers.length) {
       const markerTime = new Date(sortedMarkers[mIdx].timestamp || 0).getTime()

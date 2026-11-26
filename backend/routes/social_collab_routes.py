@@ -125,9 +125,6 @@ async def _stream_collab_agent_turn(
         参考 chat /chat 的 pump_agent + pump_sidecar 双协程模式（main.py:2200-2255）。
         议事厅 session_id 是 collab_session.id；sse_manager 推的事件不带 agent_id，
         转发时强制注入当轮 agent_id 让前端 applyEventToCollabBubble 路由到对应角色 bubble。
-
-        过滤策略沿用 chat 路径：带 worker_id / route_id 的事件归 useDispatchEventConsumer
-        独立长连接消费，不混进 collab 流。
         """
         nonlocal response_text
         AGENT_DONE = object()
@@ -153,8 +150,6 @@ async def _stream_collab_agent_turn(
         async def pump_sidecar():
             try:
                 async for event in sse_manager.subscribe(session_id, last_event_id=None):
-                    if isinstance(event, dict) and (event.get("worker_id") or event.get("route_id")):
-                        continue
                     await merged_queue.put(("sidecar", event))
             except asyncio.CancelledError:
                 raise

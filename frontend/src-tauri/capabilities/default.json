@@ -25,21 +25,6 @@
       "allow": [
         { "path": "**" }
       ]
-    },
-    {
-      "identifier": "shell:allow-execute",
-      "allow": [
-        {
-          "name": "binaries/liuruyan-backend",
-          "sidecar": true,
-          "args": [
-            "--host",
-            { "validator": "\\S+" },
-            "--port",
-            { "validator": "\\d+" }
-          ]
-        }
-      ]
     }
   ]
 }

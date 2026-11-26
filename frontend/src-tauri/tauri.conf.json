@@ -42,7 +42,9 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": ["binaries/liuruyan-backend"],
+    "resources": {
+      "backend-dist/": "backend-dist/"
+    },
     "windows": {
       "wix": {
         "language": ["zh-CN"]

@@ -34,32 +34,9 @@ const KNOWN_EVENT_TYPES = [
 export interface ParsedEvent {
   type: string
   kind?: string
-  refs?: {
-    route_id?: string
-    worker_id?: string
-    plan_id?: string
-    plan_step_id?: string
-    plan_stage?: number
-  }
   payload?: Record<string, unknown>
   event_id?: number
   raw: Record<string, unknown>
-}
-
-function pickTopLevelRefs(obj: Record<string, unknown>): ParsedEvent['refs'] | undefined {
-  // 裸事件（thinking / tool_call / tool_result）refs 在顶层而非 payload.refs，
-  // 由 backend runtime_protocol.build_runtime_transport_event 注入。
-  const wid = obj.worker_id
-  const rid = obj.route_id
-  const pid = obj.plan_id
-  if (typeof wid !== 'string' && typeof rid !== 'string' && typeof pid !== 'string') return undefined
-  return {
-    worker_id: typeof wid === 'string' ? wid : undefined,
-    route_id: typeof rid === 'string' ? rid : undefined,
-    plan_id: typeof pid === 'string' ? pid : undefined,
-    plan_step_id: typeof obj.plan_step_id === 'string' ? obj.plan_step_id : undefined,
-    plan_stage: typeof obj.plan_stage === 'number' ? obj.plan_stage : undefined,
-  }
 }
 
 export function parseSseFrame(data: string): ParsedEvent | null {
@@ -67,14 +44,9 @@ export function parseSseFrame(data: string): ParsedEvent | null {
     const parsed = JSON.parse(data)
     if (!parsed || typeof parsed !== 'object') return null
     const obj = parsed as Record<string, unknown>
-    // refs 提取顺序：obj.refs（少见）→ payload.refs（system_notice 标准位）
-    // → 顶层各字段（裸事件标准位）
-    const explicitRefs = (obj.refs || (obj.payload as Record<string, unknown>)?.refs) as ParsedEvent['refs'] | undefined
-    const refs = explicitRefs && typeof explicitRefs === 'object' ? explicitRefs : pickTopLevelRefs(obj)
     return {
       type: String(obj.type || ''),
       kind: typeof obj.kind === 'string' ? obj.kind : undefined,
-      refs,
       payload: typeof obj.payload === 'object' && obj.payload !== null ? (obj.payload as Record<string, unknown>) : undefined,
       event_id: typeof obj.event_id === 'number' ? obj.event_id : undefined,
       raw: obj,
